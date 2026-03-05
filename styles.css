@@ -1,0 +1,346 @@
+/* ============================================================
+   SD Little League Home Run Derby — styles.css  v3
+   16-bit retro / pixel-art | right-handed batter #3
+   ============================================================ */
+
+/* ---------- Reset ---------- */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --blue:     #0830B8;
+  --lt-blue:  #4870C8;
+  --gold:     #F8C020;
+  --white:    #F8F8F8;
+  --black:    #080808;
+  --red:      #D02020;
+  --green:    #208020;
+  --bg:       #0C0C2C;
+  --font:     'Courier New', Courier, monospace;
+}
+
+html, body {
+  width: 100%; height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  font-family: var(--font);
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* ---------- Screens ---------- */
+.screen {
+  position: fixed;
+  inset: 0;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.screen.active { display: flex; }
+
+/* ---------- Start / End backgrounds (retro gradient) ---------- */
+#startScreen, #endScreen {
+  /* 16-bit banded sky gradient */
+  background:
+    linear-gradient(180deg,
+      #1828A0 0%,   #1828A0 12%,
+      #2038B8 12%,  #2038B8 24%,
+      #3050C8 24%,  #3050C8 38%,
+      #4868D0 38%,  #4868D0 52%,
+      #6088E0 52%,  #6088E0 65%,
+      #207020 65%,  #207020 80%,
+      #186018 80%,  #186018 100%
+    );
+}
+
+.screen-inner {
+  position: relative;
+  width: 100%;
+  max-width: 420px;
+  padding: 20px 24px 32px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+
+/* ---------- Pixel border utility ---------- */
+.pixel-box {
+  border: 4px solid var(--gold);
+  box-shadow: 4px 4px 0 #000, inset 2px 2px 0 rgba(255,255,255,0.1);
+  image-rendering: pixelated;
+}
+
+/* ---------- Retro sun (pixel style) ---------- */
+.sun {
+  position: absolute;
+  top: -10px; right: 24px;
+  width: 48px; height: 48px;
+  background: var(--gold);
+  /* pixelated circle via box-shadow rays */
+  box-shadow:
+    0 -10px 0 4px var(--gold),
+    0  10px 0 4px var(--gold),
+    -10px 0 0 4px var(--gold),
+     10px 0 0 4px var(--gold),
+    -8px -8px 0 2px var(--gold),
+     8px -8px 0 2px var(--gold),
+    -8px  8px 0 2px var(--gold),
+     8px  8px 0 2px var(--gold),
+    0 0 0 2000px rgba(0,0,0,0); /* prevent glow spread */
+  animation: sunSpin 8s linear infinite;
+}
+@keyframes sunSpin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+/* ---------- Cap badge ---------- */
+.cap-badge {
+  width: 72px; height: 72px;
+  background: var(--blue);
+  border: 4px solid var(--gold);
+  box-shadow: 4px 4px 0 #000;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.8rem;
+  font-weight: 900;
+  font-style: italic;
+  color: var(--white);
+  letter-spacing: -2px;
+  image-rendering: pixelated;
+}
+
+/* ---------- Game title ---------- */
+.game-title {
+  font-size: 2.6rem;
+  font-weight: 900;
+  line-height: 1.05;
+  color: var(--gold);
+  /* Hard pixel-style multi-shadow outline */
+  text-shadow:
+     2px  2px 0 #000,
+    -2px  2px 0 #000,
+     2px -2px 0 #000,
+    -2px -2px 0 #000,
+     4px  4px 0 #000814;
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: 3px;
+  font-family: var(--font);
+  /* Prevent subpixel blur on screens */
+  -webkit-font-smoothing: none;
+  font-smooth: never;
+}
+
+.sub-title {
+  font-size: 0.72rem;
+  color: var(--white);
+  letter-spacing: 4px;
+  text-transform: uppercase;
+  text-shadow: 1px 1px 0 #000;
+  font-family: var(--font);
+}
+
+/* ---------- Info box ---------- */
+.scoreboard-box {
+  background: rgba(0, 8, 32, 0.92);
+  border: 3px solid var(--gold);
+  box-shadow: 4px 4px 0 #000;
+  padding: 12px 18px;
+  width: 100%;
+  text-align: center;
+  color: var(--white);
+  font-size: 0.78rem;
+  line-height: 1.7;
+  font-family: var(--font);
+}
+
+.scoring-key {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 0.75rem;
+  font-family: var(--font);
+}
+.key-hr     { color: var(--gold); }
+.key-deep   { color: #88C8FF; }
+.key-ground { color: #88FF88; }
+.key-miss   { color: #FF8888; }
+
+/* ---------- Buttons (pixel style) ---------- */
+.btn-main {
+  padding: 14px 44px;
+  font-size: 1.1rem;
+  font-weight: 900;
+  font-family: var(--font);
+  color: var(--white);
+  background: var(--blue);
+  border: 0;
+  outline: 0;
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 3px;
+  /* Pixel border effect */
+  box-shadow:
+    0 6px 0 #05158A,
+    4px 0 0 #1845D0,
+    -4px 0 0 #05158A,
+    4px 6px 0 #000,
+    -4px 6px 0 #000;
+  transition: transform 0.08s, box-shadow 0.08s;
+  -webkit-appearance: none;
+  appearance: none;
+  image-rendering: pixelated;
+}
+.btn-main:active {
+  transform: translateY(4px);
+  box-shadow:
+    0 2px 0 #05158A,
+    4px 0 0 #1845D0,
+    -4px 0 0 #05158A;
+}
+
+.tap-hint {
+  font-size: 0.65rem;
+  color: rgba(255,255,255,0.6);
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  font-family: var(--font);
+  animation: blink 1.2s step-start infinite;
+}
+@keyframes blink {
+  0%,100% { opacity: 1; }
+  50%      { opacity: 0; }
+}
+
+/* ---------- HUD (outside canvas, minimal — main HUD is drawn on canvas) ---------- */
+#hud {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 0; /* HUD is drawn on canvas; this is just a placeholder */
+  z-index: 10;
+  pointer-events: none;
+}
+/* These are hidden — we draw them on canvas instead */
+#scoreDisplay, #pitchesDisplay { display: none; }
+
+/* ---------- Canvas (pixel art) ---------- */
+#gameCanvas {
+  position: absolute;
+  top: 0; left: 0;
+  /* Fill height; center horizontally; preserve aspect ratio */
+  height: 100%;
+  width: auto;
+  max-width: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  /* Crisp pixel upscaling on all browsers — keep that retro crunch */
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  image-rendering: -moz-crisp-edges;
+  cursor: crosshair;
+}
+
+/* ---------- Swing zone ---------- */
+#swingZone {
+  position: absolute;
+  /* Match canvas positioning so tap area lines up with visual canvas */
+  top: 0; bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  /* width matches canvas aspect — 320:480 = 2:3 */
+  width: calc(100vh * (320 / 480));
+  max-width: 100%;
+  z-index: 15;
+  cursor: crosshair;
+}
+
+/* ---------- Timing meter (drawn on canvas — hide DOM version) ---------- */
+.timing-meter { display: none !important; }
+
+/* ---------- End screen ---------- */
+.end-title {
+  font-size: 2rem;
+  color: var(--gold);
+  text-shadow:
+    2px 0 0 #000, -2px 0 0 #000, 0 2px 0 #000, 0 -2px 0 #000,
+    3px 3px 0 #000;
+  text-transform: uppercase;
+  letter-spacing: 4px;
+  font-family: var(--font);
+}
+
+.final-scoreboard {
+  width: 100%;
+  background: rgba(0,8,32,0.92);
+  border: 3px solid var(--gold);
+  box-shadow: 4px 4px 0 #000;
+  font-family: var(--font);
+}
+.sb-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 16px;
+  color: var(--white);
+  font-size: 1rem;
+  font-family: var(--font);
+}
+.sb-row.header {
+  background: var(--blue);
+  font-size: 0.68rem;
+  letter-spacing: 3px;
+  color: var(--gold);
+  padding: 6px 16px;
+}
+.sb-name { color: #88C8FF; }
+
+.rating-msg {
+  font-size: 0.95rem;
+  text-align: center;
+  color: var(--gold);
+  text-shadow: 2px 2px 0 #000;
+  font-family: var(--font);
+  min-height: 1.4em;
+  letter-spacing: 1px;
+}
+
+/* ---------- Hit log chips ---------- */
+.hit-log {
+  width: 100%;
+  background: rgba(0,8,32,0.75);
+  border: 2px solid #305090;
+  padding: 8px 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  justify-content: center;
+  min-height: 36px;
+}
+.hit-chip {
+  padding: 3px 8px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-family: var(--font);
+  box-shadow: 2px 2px 0 #000;
+  image-rendering: pixelated;
+}
+.hit-chip.hr     { background: var(--gold); color: #000; }
+.hit-chip.deep   { background: var(--blue); color: #fff; }
+.hit-chip.ground { background: var(--green); color: #fff; }
+.hit-chip.miss   { background: #404040; color: #aaa; }
+
+/* ---------- Responsive ---------- */
+@media (max-height: 600px) {
+  .game-title   { font-size: 1.8rem; }
+  .screen-inner { gap: 8px; }
+  .cap-badge    { width: 56px; height: 56px; font-size: 1.4rem; }
+}
+@media (min-width: 500px) {
+  #gameCanvas { max-width: 500px; left: 50%; transform: translateX(-50%); }
+}

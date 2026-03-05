@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>SD Little League Derby</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+  <!-- ===================== START SCREEN ===================== -->
+  <div id="startScreen" class="screen active">
+    <div class="screen-inner">
+      <div class="sun"></div>
+
+      <div class="cap-badge">⚾</div>
+      <h1 class="game-title">HOME RUN<br>DERBY</h1>
+      <p class="sub-title">San Diego Little League</p>
+
+      <div class="scoreboard-box pixel-box">
+        <p>10 PITCHES. TIME YOUR SWING!</p>
+        <div class="scoring-key">
+          <span class="key-hr">  ⚾ CRUSHED!  (perfect timing) = 10 pts</span>
+          <span class="key-deep">  💥 DEEP HIT  (good timing)    = 5 pts</span>
+          <span class="key-ground">  🏃 GROUNDER  (early/late)     = 1 pt</span>
+          <span class="key-miss">  ❌ MISS      (way off)        = 0 pts</span>
+        </div>
+      </div>
+
+      <button id="startBtn" class="btn-main">PLAY BALL!</button>
+      <p class="tap-hint">▶ TAP ANYWHERE TO SWING ◀</p>
+    </div>
+  </div>
+
+  <!-- ===================== GAME SCREEN ===================== -->
+  <div id="gameScreen" class="screen">
+    <!-- HUD values kept in DOM for JS reference but hidden (drawn on canvas) -->
+    <div id="hud">
+      <span id="scoreDisplay"></span>
+      <span id="pitchesDisplay"></span>
+    </div>
+
+    <!-- Pixel-art game canvas — all rendering happens here -->
+    <canvas id="gameCanvas"></canvas>
+
+    <!-- Full-screen tap zone for swinging -->
+    <div id="swingZone"></div>
+  </div>
+
+  <!-- ===================== END SCREEN ===================== -->
+  <div id="endScreen" class="screen">
+    <div class="screen-inner">
+      <div class="sun"></div>
+      <h2 class="end-title">GAME OVER!</h2>
+
+      <div class="final-scoreboard pixel-box">
+        <div class="sb-row header">
+          <span>PLAYER</span><span>HR</span><span>SCORE</span>
+        </div>
+        <div class="sb-row">
+          <span class="sb-name">YOU</span>
+          <span id="finalHR">0</span>
+          <span id="finalScore">0</span>
+        </div>
+      </div>
+
+      <div id="ratingMsg" class="rating-msg"></div>
+
+      <div id="hitLog" class="hit-log"></div>
+
+      <button id="playAgainBtn" class="btn-main">PLAY AGAIN!</button>
+    </div>
+  </div>
+
+  <script src="game.js"></script>
+</body>
+</html>
