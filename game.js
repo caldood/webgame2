@@ -847,6 +847,7 @@ function setTouchZonesActive(active) {
 }
 
 function startGame() {
+  if (state === 'playing') return; // guard against double-fire
   state = 'playing';
   initGame();
   startScreen.classList.remove('active');
@@ -858,11 +859,24 @@ function startGame() {
   if (!raf) raf = requestAnimationFrame(loop);
 }
 
+// Button listeners
 startBtn.addEventListener('click',    startGame);
 startBtn.addEventListener('touchend', e => { e.preventDefault(); startGame(); }, {passive:false});
 
 restartBtn.addEventListener('click',    () => { gameoverScreen.classList.remove('active'); startGame(); });
 restartBtn.addEventListener('touchend', e => { e.preventDefault(); gameoverScreen.classList.remove('active'); startGame(); }, {passive:false});
+
+// Tap-anywhere fallback for iOS (fires on the screen overlay itself)
+startScreen.addEventListener('touchend', e => {
+  e.preventDefault();
+  if (state !== 'playing') startGame();
+}, {passive:false});
+
+gameoverScreen.addEventListener('touchend', e => {
+  e.preventDefault();
+  gameoverScreen.classList.remove('active');
+  startGame();
+}, {passive:false});
 
 // Update best score on start screen
 function updateStartBest() {
