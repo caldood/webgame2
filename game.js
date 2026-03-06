@@ -1,1253 +1,885 @@
+'use strict';
 /* ============================================================
-   SD Little League Home Run Derby — game.js  v3
-   Batter's-eye-view | 16-bit pixel art | right-handed batter #3
-   Canvas: 320×480 logical (CSS-scaled, image-rendering:pixelated)
+   Ferrari Sprint — game.js
+   Pseudo-3D arcade racer (OutRun style)
+   HTML5 Canvas | Vanilla JS | Mobile-first
    ============================================================ */
 
-'use strict';
-
-// ─── Canvas resolution ────────────────────────────────────────
-const LW = 320;
-const LH = 480;
-
-// ─── Field geometry (all in logical pixels) ──────────────────
-// Vanishing point ≈ deep center field
-const VP = { x: 160, y: 122 };
-
-const F = {
-  // Outfield structures
-  wallY:   128,   // top of outfield wall
-  wallBot: 144,   // bottom of outfield wall
-  trackY:  144,   // warning track start (clay strip)
-  trackBot:162,   // warning track end / grass begins
-  // Foul poles (top of each pole)
-  lPoleTop: { x: 14, y: 38 }, lPoleBase: { x: 14, y: 128 },
-  rPoleTop: { x: 306,y: 38 }, rPoleBase: { x: 306,y: 128 },
-  // Where foul lines reach the outfield wall
-  lWallX: 14,  rWallX: 306,
-  // Bases (in perspective 2D coords)
-  b1: { x: 228, y: 312 },
-  b2: { x: 160, y: 186 },
-  b3: { x:  92, y: 312 },
-  // Pitcher's mound
-  mnd: { x: 160, y: 224 },
-  // Home plate
-  plt: { x: 160, y: 448 },
-};
-
-// Ball travels from pitcher release → hitting zone
-const BALL_START  = { x: 163, y: 205 };   // pitcher release point
-const BALL_END    = { x: 160, y: 388 };   // arrival (in front of plate)
-const BALL_SIZE_S = 3;                     // small (far)
-const BALL_SIZE_L = 22;                    // large (close)
-
-// ─── Game constants ───────────────────────────────────────────
-const TOTAL_PITCHES  = 10;
-const PITCH_DURATION = 2300;
-
-// Timing zones (fraction of pitchT; meter indicator = pitchT)
-const PERFECT_MIN = 0.54;
-const PERFECT_MAX = 0.74;
-const GOOD_MIN    = 0.38;
-const GOOD_MAX    = 0.92;
-
-const SCORES = { hr: 10, deep: 5, ground: 1, miss: 0 };
-
-// ─── 16-bit colour palette ────────────────────────────────────
-const P = {
-  // Sky bands (dark→light, top→bottom)
-  sky:  ['#1828A0','#2038B0','#3050C4','#4468D8','#6080E0'],
-  // Sun
-  sun:  '#F8D020',
-  // Clouds
-  cld:  '#C8D8F8',
-  // Bleachers / stands
-  blchDk: '#604820', blchMd: '#805830', blchLt: '#A07040',
-  // Seats
-  shtR: '#C82020', shtB: '#203898', shtG: '#1E701E', shtY: '#C89020',
-  // Outfield wall & fence
-  wall:  '#145014', wallHi: '#208020', wallBrd: '#0C3C0C',
-  // Foul poles
-  pole:  '#F8E020',
-  // Warning track (clay)
-  trk:   '#B06828',
-  // Grass
-  g0:    '#157015',  // dark stripe
-  g1:    '#27A027',  // light stripe
-  // Infield dirt
-  drt:   '#9A6828', drtDk: '#7A5020',
-  // Chalk
-  chalk: '#F4F0DC',
-  // Team colours
-  blue:  '#0830B8', ltBlue:'#3060D8', navy:'#041060',
-  white: '#F0F0F0', offWht:'#E0DCC8',
-  gold:  '#F8C020', dkGold:'#C09010',
-  red:   '#C82020',
-  // Skin tones
-  skin:  '#F0C898', skinDk:'#C08050',
-  // HUD
-  hudBg: '#060618', hudBrd:'#F8C020',
-  // Hit outcomes
-  clrHR:   '#F8E040', clrDeep:'#70B8FF',
-  clrGnd:  '#70E070', clrMiss:'#909090',
-  // Misc
-  black: '#080808', shadow:'rgba(0,0,0,0.35)',
-};
-
-// ─── State ────────────────────────────────────────────────────
-let state = {};
-
-function resetState() {
-  state = {
-    phase: 'idle',
-    score: 0, pitchesLeft: TOTAL_PITCHES, homeRuns: 0,
-    hitLog: [],
-    pitchT: 0, swung: false, lastOutcome: null,
-    resultTimer: 0,
-    batSwing: 0, batSwinging: false,
-    ballAnim: null,
-    ballSpin: 0,         // cumulative rotation angle for seam spin
-    confetti: [],
-    flashMsg: '', flashColor: P.gold, flashTimer: 0,
-    crowdT: 0,
-    crowdExcited: 0,     // 0-1, peaks on HR, fades out
-    contactFlash: 0,     // brief white flash at contact point
-    contactX: 0, contactY: 0,
-  };
-}
-
-// ─── DOM ──────────────────────────────────────────────────────
+// ─── Canvas setup ─────────────────────────────────────────────
 const canvas = document.getElementById('gameCanvas');
 const ctx    = canvas.getContext('2d');
-const swingZ = document.getElementById('swingZone');
 
-const screens = {
-  start: document.getElementById('startScreen'),
-  game:  document.getElementById('gameScreen'),
-  end:   document.getElementById('endScreen'),
+let W, H;
+function resize() {
+  W = canvas.width  = canvas.clientWidth;
+  H = canvas.height = canvas.clientHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ─── DOM refs ─────────────────────────────────────────────────
+const startScreen   = document.getElementById('start-screen');
+const gameoverScreen= document.getElementById('gameover-screen');
+const hud           = document.getElementById('hud');
+const hudScore      = document.getElementById('hudScore');
+const hudSpeed      = document.getElementById('hudSpeed');
+const hudBest       = document.getElementById('hudBest');
+const finalScoreEl  = document.getElementById('finalScore');
+const bestScoreEl   = document.getElementById('bestScore');
+const startBestEl   = document.getElementById('startBest');
+const nearMissEl    = document.getElementById('near-miss');
+const startBtn      = document.getElementById('startBtn');
+const restartBtn    = document.getElementById('restartBtn');
+const touchLeft     = document.getElementById('touch-left');
+const touchRight    = document.getElementById('touch-right');
+
+// ─── Game state ───────────────────────────────────────────────
+let state = 'start'; // 'start' | 'playing' | 'dead'
+let score = 0;
+let bestScore = parseInt(localStorage.getItem('ferrariSprintBest') || '0');
+let raf;
+
+// Physics
+let playerX    = 0;      // -1..1 (lane position)
+let speed      = 0;      // current speed (0..1)
+let targetSpeed= 0;
+let distance   = 0;      // total distance
+let curve      = 0;      // current track curve (-1..1)
+let curveDrift = 0;      // accumulated drift from curve
+
+// Road scroll
+let roadZ      = 0;
+
+// Steering
+let steerLeft  = false;
+let steerRight = false;
+
+// Screen shake
+let shakeX = 0, shakeY = 0, shakeMag = 0;
+
+// Near miss
+let nearMissTimer = 0;
+
+// Crash flash
+let crashFlash = 0;
+
+// ─── Road segments ────────────────────────────────────────────
+const NUM_SEG   = 200;
+const SEG_LEN   = 200;   // logical length of each segment
+
+// Segment types and colours
+const COLORS = {
+  roadLight:   '#606060',
+  roadDark:    '#555555',
+  curbRed:     '#E8001D',
+  curbWhite:   '#F0F0F0',
+  grassLight:  '#3AA335',
+  grassDark:   '#2D8029',
+  laneLight:   '#CCCCCC',
+  laneDark:    '#AAAAAA',
 };
 
-// ─── Canvas init ──────────────────────────────────────────────
-canvas.width  = LW;
-canvas.height = LH;
-ctx.imageSmoothingEnabled = false;
+// ─── AI cars ──────────────────────────────────────────────────
+const MAX_AI = 6;
+let aiCars = [];
 
-// ─── Audio ────────────────────────────────────────────────────
-let audioCtx = null;
-function getAC() {
-  if (!audioCtx) try { audioCtx = new (window.AudioContext||window.webkitAudioContext)(); } catch(e){}
-  return audioCtx;
+// Car colours for AI
+const AI_COLORS = [
+  { body:'#1E3A8A', accent:'#60A5FA' }, // blue
+  { body:'#065F46', accent:'#34D399' }, // green
+  { body:'#7C3AED', accent:'#C4B5FD' }, // purple
+  { body:'#D97706', accent:'#FCD34D' }, // orange
+  { body:'#111827', accent:'#9CA3AF' }, // dark
+  { body:'#BE123C', accent:'#FB7185' }, // pink-red
+];
+
+// ─── Obstacle / cone array ────────────────────────────────────
+let obstacles = [];
+
+// ─── Clouds ───────────────────────────────────────────────────
+let clouds = Array.from({length:8}, (_,i) => ({
+  x: Math.random(), y: 0.05 + Math.random()*0.18,
+  w: 0.08 + Math.random()*0.12, speed: 0.00005 + Math.random()*0.00005
+}));
+
+// ─── Track curve segments ─────────────────────────────────────
+// We generate a procedural list of straight/curve sections
+const TRACK_SECTIONS = [];
+function genTrack() {
+  TRACK_SECTIONS.length = 0;
+  TRACK_SECTIONS.push({len:800, curve:0});
+  for (let i=0; i<40; i++) {
+    const c = (Math.random()-0.5)*2;
+    TRACK_SECTIONS.push({len:300+Math.random()*600, curve:c});
+    if (Math.random()<0.3) TRACK_SECTIONS.push({len:200+Math.random()*300, curve:0});
+  }
 }
-function tone(freq,type,dur,vol,delay) {
-  const ac=getAC(); if(!ac) return;
-  const t0=ac.currentTime+(delay||0);
-  const o=ac.createOscillator(), g=ac.createGain();
-  o.connect(g); g.connect(ac.destination);
-  o.type=type||'square'; o.frequency.setValueAtTime(freq,t0);
-  g.gain.setValueAtTime(vol||0.2,t0);
-  g.gain.exponentialRampToValueAtTime(0.0001,t0+dur);
-  o.start(t0); o.stop(t0+dur+0.05);
-}
-const sndCrack = () => { tone(280,'sawtooth',0.05,0.5); tone(560,'square',0.04,0.3,0.02); tone(1100,'sine',0.07,0.2,0.01); };
-const sndMiss  = () => { tone(160,'sine',0.28,0.14); tone(110,'sine',0.35,0.09,0.14); };
-const sndHR    = () => [523,659,784,880,1047].forEach((f,i)=>tone(f,'square',0.2,0.28,i*0.12));
-const sndPitch = () => tone(240,'sine',0.05,0.1);
+genTrack();
 
-// ─── Screen management ────────────────────────────────────────
-function showScreen(name) {
-  Object.entries(screens).forEach(([k,el]) => el.classList.toggle('active', k===name));
-}
+let trackPos  = 0; // position along TRACK_SECTIONS in total distance units
+let sectionIdx= 0;
+let sectionPos= 0;
 
-// ─── Pixel helpers ────────────────────────────────────────────
-const $ = (x,y,w,h,c) => { ctx.fillStyle=c; ctx.fillRect(~~x,~~y,Math.ceil(w),Math.ceil(h)); };
-function line(x1,y1,x2,y2,c,w) {
-  ctx.strokeStyle=c; ctx.lineWidth=w||1;
-  ctx.beginPath(); ctx.moveTo(~~x1,~~y1); ctx.lineTo(~~x2,~~y2); ctx.stroke();
-}
-function txt(t,x,y,c,sz,align) {
-  ctx.fillStyle=c; ctx.font=`bold ${sz||9}px monospace`;
-  ctx.textAlign=align||'left'; ctx.fillText(t,~~x,~~y);
-}
-function txtC(t,x,y,c,sz) { txt(t,x,y,c,sz,'center'); }
-
-// ─── Math helpers ─────────────────────────────────────────────
-function lerp(a,b,t){ return a+(b-a)*t; }
-// Smooth swing easing: slow start, fast middle, slow end
-function easeInOut(t){ return t<0.5 ? 2*t*t : -1+(4-2*t)*t; }
-// Ease out for snappy feel
-function easeOut(t){ return 1-(1-t)*(1-t); }
-// Given a depth fraction d (0=wall, 1=plate), return y coordinate
-function fieldY(d){ return lerp(F.trackBot, F.plt.y, d); }
-// Given a depth fraction and a lateral offset at plate, return x
-function fieldX(d, plateOffset){ return lerp(VP.x, F.plt.x+plateOffset, d); }
-
-// ─── Scene drawing ────────────────────────────────────────────
-
-function drawSky() {
-  const bands = P.sky;
-  const bandH = (VP.y - 4) / bands.length;
-  bands.forEach((c,i) => $(0, i*bandH, LW, bandH+1, c));
+function getTrackCurve(d) {
+  let p = d % TRACK_SECTIONS.reduce((a,s)=>a+s.len,0);
+  for (let s of TRACK_SECTIONS) {
+    if (p <= s.len) return s.curve;
+    p -= s.len;
+  }
+  return 0;
 }
 
-function drawSun() {
-  // Pixel-style sun: square body + rays (pixels offset outward)
-  const sx=272, sy=22, sr=14;
-  // Glow
-  $(sx-sr-4, sy-4, (sr+4)*2, sr*2+8, 'rgba(248,210,20,0.15)');
-  // Body
-  $(sx-sr, sy-sr, sr*2, sr*2, P.sun);
-  // Face pixels (simple)
-  $(sx-4, sy-3, 3, 3, '#C09010'); // eye L
-  $(sx+1, sy-3, 3, 3, '#C09010'); // eye R
-  $(sx-4, sy+3, 9, 2, '#C09010'); // smile
-  // Rays (8 directions, pixel style)
-  const rays = [[0,-1],[0,1],[1,0],[-1,0],[1,-1],[-1,-1],[1,1],[-1,1]];
-  rays.forEach(([dx,dy]) => $(sx+dx*(sr+2), sy+dy*(sr+2), 6, 6, P.sun));
+// ─── Pseudo-3D projection ─────────────────────────────────────
+// We render N strips from horizon (top) to player (bottom)
+const DRAW_DIST  = 150;  // segments to draw
+const CAMERA_H   = 1500; // camera height
+const CAMERA_D   = 0.84; // depth (field of view tuning)
+
+function projectRoad(segZ, playerCamX) {
+  // segZ: 0=at player, large=far
+  const z      = segZ;
+  if (z <= 0) return null;
+  const scale  = CAMERA_D / z;
+  const screenX= W/2 + scale * (playerCamX) * W * 0.5;
+  const screenY= H/2 + scale * CAMERA_H;
+  const roadW  = scale * W * 0.5;
+  return { screenX, screenY, roadW, scale };
 }
 
-function drawClouds(t) {
-  // Two slow-drifting pixel clouds
-  const clouds = [
-    { bx: ((t*0.008+0)   % 1.4) * LW - 40, by: 20, w: 52, h: 16 },
-    { bx: ((t*0.005+0.6) % 1.4) * LW - 40, by: 36, w: 40, h: 12 },
-  ];
-  clouds.forEach(({bx,by,w,h}) => {
-    $(bx,      by+h*0.5, w,   h*0.5, P.cld);
-    $(bx+w*0.1, by,      w*0.8,h,   P.cld);
-    $(bx+w*0.2, by-h*0.3,w*0.5,h*0.5,P.cld);
+// ─── Game init ────────────────────────────────────────────────
+function initGame() {
+  playerX    = 0;
+  speed      = 0.3;
+  targetSpeed= 0.5;
+  distance   = 0;
+  curve      = 0;
+  curveDrift = 0;
+  roadZ      = 0;
+  shakeX     = shakeY = shakeMag = 0;
+  crashFlash = 0;
+  nearMissTimer = 0;
+  score      = 0;
+  sectionIdx = 0;
+  sectionPos = 0;
+  aiCars     = [];
+  obstacles  = [];
+  genTrack();
+
+  for (let i=0; i<4; i++) spawnAICar();
+}
+
+function spawnAICar() {
+  if (aiCars.length >= MAX_AI) return;
+  const col = AI_COLORS[Math.floor(Math.random()*AI_COLORS.length)];
+  aiCars.push({
+    x:  (Math.random()-0.5)*1.4,
+    z:  0.5 + Math.random()*1.5,
+    color: col,
+    speed: 0.2 + Math.random()*0.35,
+    wobble: 0,
+    wobbleT: 0,
   });
 }
 
-function drawBleachers() {
-  // ── Upper deck (behind / higher) ──────────────────────────
-  const udY=60, udH=40, margin=28;
-  // Structure
-  $(margin,   udY,   LW-margin*2, udH, P.blchDk);
-  $(margin,   udY,   LW-margin*2, 3,   P.blchLt); // highlight cap
-  // Upper deck seats (3 rows, many cols)
-  const cols=20;
-  const seatW=(LW-margin*2-4)/cols;
-  const seatClrs=[P.shtB,P.shtR,P.shtY,P.shtG,P.shtB,P.shtB,P.shtR];
-  for(let r=0;r<3;r++) {
-    for(let c=0;c<cols;c++) {
-      const sc=seatClrs[(r*7+c*3)%seatClrs.length];
-      $(margin+2+c*seatW, udY+5+r*10, seatW-1, 7, sc);
-    }
-  }
-  // Upper crowd heads (bobbing; jump up on HR)
-  const excite = state.crowdExcited || 0;
-  for(let i=0;i<24;i++) {
-    const normalBob = (Math.sin(state.crowdT*0.003+i*1.1)>0.6) ? -2 : 0;
-    // Excited: big upward jump, staggered by index
-    const exciteBob = excite > 0
-      ? -Math.max(0, Math.sin((state.crowdT*0.012 + i*0.4))) * 12 * excite
-      : 0;
-    const hx=margin+4+i*((LW-margin*2-8)/24);
-    const hy=udY+2+normalBob+exciteBob;
-    const skinT=[P.skin,P.skinDk,'#E0A870','#C07840','#F8D0B8'][i%5];
-    $(hx,~~hy,5,5,skinT);
-    $(hx-1,~~hy-3,7,3,[P.blue,P.red,P.shtY,P.shtG][i%4]);
-    // Excited: tiny raised arms
-    if(excite > 0.3){
-      ctx.fillStyle=[P.skin,P.skinDk][i%2];
-      const armA = Math.sin(state.crowdT*0.015+i)*0.5*excite;
-      $(hx-3, ~~hy-1, 2, 4, [P.skin,P.skinDk][i%2]); // L arm up
-      $(hx+6, ~~hy-1, 2, 4, [P.skin,P.skinDk][i%2]); // R arm up
-    }
-  }
-
-  // ── Lower deck / bleachers ────────────────────────────────
-  const ldY=98, ldH=30;
-  $(8,   ldY, LW-16, ldH, P.blchMd);
-  $(8,   ldY, LW-16, 2,   P.blchLt);
-  // Seat rows
-  for(let r=0;r<2;r++) {
-    for(let c=0;c<cols;c++) {
-      const sc=seatClrs[(r*5+c*4)%seatClrs.length];
-      $( 10+c*((LW-20)/cols), ldY+4+r*11, (LW-20)/cols-1, 8, sc);
-    }
-  }
-  // Lower crowd heads (bob + HR excitement)
-  for(let i=0;i<22;i++) {
-    const normalBob = (Math.sin(state.crowdT*0.004+i*0.85+1)>0.65) ? -2 : 0;
-    const exciteBob = excite > 0
-      ? -Math.max(0, Math.sin((state.crowdT*0.014 + i*0.5))) * 10 * excite
-      : 0;
-    const hx=12+i*((LW-24)/22);
-    const hy=ldY+normalBob+exciteBob;
-    const skinT=[P.skin,P.skinDk,'#E0B080','#D09060'][i%4];
-    $(hx,~~hy,6,6,skinT);
-    $(hx-1,~~hy-3,8,3,[P.blue,P.red,P.white,P.shtG][i%4]);
-    if(excite > 0.3){
-      $(hx-2, ~~hy, 2, 5, [P.skin,P.skinDk][i%2]);
-      $(hx+6, ~~hy, 2, 5, [P.skin,P.skinDk][i%2]);
-    }
-  }
-}
-
-function drawScoreboard() {
-  // Small scoreboard on the outfield wall, center
-  const sbX=LW/2-38, sbY=F.wallY-36, sbW=76, sbH=34;
-  $(sbX, sbY, sbW, sbH, P.navy);
-  $(sbX, sbY, sbW, 2,   P.gold); // top trim
-  $(sbX, sbY+sbH-2, sbW, 2, P.gold); // bottom trim
-  // "SD LITTLE LEAGUE" header
-  txtC('SD LITTLE LEAGUE', LW/2, sbY+9, P.gold, 6);
-  // Score row
-  $(sbX+2, sbY+12, sbW-4, 1, P.dkGold);
-  txtC(`SCR  ${String(state.score).padStart(3,'0')}    LEFT ${state.pitchesLeft}`, LW/2, sbY+26, P.white, 7);
-  // Border
-  ctx.strokeStyle=P.gold; ctx.lineWidth=1;
-  ctx.strokeRect(~~sbX,~~sbY,~~sbW,~~sbH);
-}
-
-function drawOutfieldWall() {
-  // Main wall face
-  $(6, F.wallY, LW-12, F.wallBot-F.wallY, P.wall);
-  // Top rail highlight
-  $(6, F.wallY, LW-12, 2, P.wallHi);
-  // Board segments
-  for(let bx=8; bx<LW-8; bx+=12) {
-    line(bx, F.wallY, bx, F.wallBot, P.wallBrd, 1);
-  }
-  // Padding squares (alternate) - cartoon look
-  for(let px=16; px<LW-16; px+=24) {
-    $(px, F.wallY+2, 18, 8, '#1A6020');
-  }
-}
-
-function drawFoulPoles() {
-  // Left pole
-  line(F.lPoleBase.x, F.lPoleBase.y, F.lPoleTop.x, F.lPoleTop.y, P.pole, 3);
-  // Pennant flag at top
-  ctx.fillStyle=P.pole;
-  ctx.beginPath();
-  ctx.moveTo(F.lPoleTop.x, F.lPoleTop.y);
-  ctx.lineTo(F.lPoleTop.x+10, F.lPoleTop.y+4);
-  ctx.lineTo(F.lPoleTop.x, F.lPoleTop.y+8);
-  ctx.fill();
-  // Right pole
-  line(F.rPoleBase.x, F.rPoleBase.y, F.rPoleTop.x, F.rPoleTop.y, P.pole, 3);
-  ctx.beginPath();
-  ctx.moveTo(F.rPoleTop.x, F.rPoleTop.y);
-  ctx.lineTo(F.rPoleTop.x-10, F.rPoleTop.y+4);
-  ctx.lineTo(F.rPoleTop.x, F.rPoleTop.y+8);
-  ctx.fill();
-}
-
-function drawWarningTrack() {
-  // Clay-coloured trapezoid between wall and grass
-  ctx.fillStyle = P.trk;
-  ctx.beginPath();
-  ctx.moveTo(F.lWallX,  F.wallBot);
-  ctx.lineTo(F.rWallX,  F.wallBot);
-  ctx.lineTo(F.rWallX+8,F.trackBot);
-  ctx.lineTo(F.lWallX-8,F.trackBot);
-  ctx.closePath();
-  ctx.fill();
-  // Subtle texture dots
-  ctx.fillStyle = P.drtDk;
-  for(let dx=20;dx<LW-20;dx+=8) {
-    for(let dy=F.wallBot+2;dy<F.trackBot;dy+=5) {
-      if((dx+dy)%14===0) $(dx,dy,2,2,P.drtDk);
-    }
-  }
-}
-
-function drawField() {
-  // Full grass trapezoid (outfield + infield base layer)
-  const stripes = 12;
-  const topL=F.lWallX-8, topR=F.rWallX+8, topY=F.trackBot;
-  const botL=0, botR=LW, botY=LH;
-
-  for(let s=0;s<stripes;s++) {
-    const t0=s/stripes, t1=(s+1)/stripes;
-    const x0L=lerp(topL,botL,t0), x0R=lerp(topR,botR,t0), y0=lerp(topY,botY,t0);
-    const x1L=lerp(topL,botL,t1), x1R=lerp(topR,botR,t1), y1=lerp(topY,botY,t1);
-    const col = s%2===0 ? P.g0 : P.g1;
-    ctx.fillStyle=col;
-    ctx.beginPath();
-    ctx.moveTo(~~x0L,~~y0); ctx.lineTo(~~x0R,~~y0);
-    ctx.lineTo(~~x1R,~~y1); ctx.lineTo(~~x1L,~~y1);
-    ctx.closePath(); ctx.fill();
-  }
-
-  // Foul lines (white chalk) from home plate to wall corners
-  ctx.strokeStyle=P.chalk; ctx.lineWidth=1.5; ctx.setLineDash([]);
-  ctx.beginPath(); ctx.moveTo(F.plt.x, F.plt.y); ctx.lineTo(F.lWallX, F.wallBot); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(F.plt.x, F.plt.y); ctx.lineTo(F.rWallX, F.wallBot); ctx.stroke();
-}
-
-function drawInfield() {
-  // ── Dirt diamond (perspective quadrilateral) ──────────────
-  ctx.fillStyle=P.drt;
-  ctx.beginPath();
-  ctx.moveTo(F.plt.x,  F.plt.y);          // home
-  ctx.lineTo(F.b1.x+12, F.b1.y);          // past 1st
-  ctx.lineTo(F.b2.x,   F.b2.y-8);         // past 2nd
-  ctx.lineTo(F.b3.x-12, F.b3.y);          // past 3rd
-  ctx.closePath();
-  ctx.fill();
-  // Darker shading on far side of diamond
-  ctx.fillStyle=P.drtDk;
-  ctx.beginPath();
-  ctx.moveTo(F.b2.x,   F.b2.y-8);
-  ctx.lineTo(F.b1.x+12, F.b1.y);
-  ctx.lineTo(F.b1.x,   F.b1.y+14);
-  ctx.lineTo(F.b2.x,   F.b2.y+2);
-  ctx.closePath();
-  ctx.fill();
-  ctx.fillStyle=P.drtDk;
-  ctx.beginPath();
-  ctx.moveTo(F.b2.x,   F.b2.y-8);
-  ctx.lineTo(F.b3.x-12, F.b3.y);
-  ctx.lineTo(F.b3.x,   F.b3.y+14);
-  ctx.lineTo(F.b2.x,   F.b2.y+2);
-  ctx.closePath();
-  ctx.fill();
-
-  // ── Grass cutout inside baselines ─────────────────────────
-  // (small infield grass area between the dirt)
-  ctx.fillStyle=P.g1;
-  ctx.beginPath();
-  ctx.moveTo(F.plt.x,  F.plt.y-20);
-  ctx.lineTo(F.b1.x,  F.b1.y);
-  ctx.lineTo(F.b2.x,  F.b2.y);
-  ctx.lineTo(F.b3.x,  F.b3.y);
-  ctx.closePath();
-  ctx.fill();
-
-  // ── Pitcher's mound ───────────────────────────────────────
-  ctx.fillStyle=P.drtDk;
-  ctx.beginPath(); ctx.ellipse(F.mnd.x,F.mnd.y,20,8,0,0,Math.PI*2); ctx.fill();
-  ctx.fillStyle=P.drt;
-  ctx.beginPath(); ctx.ellipse(F.mnd.x,F.mnd.y-2,17,6,0,0,Math.PI*2); ctx.fill();
-  // Pitcher's rubber
-  $(F.mnd.x-6, F.mnd.y-4, 12, 3, P.chalk);
-
-  // ── Base paths (chalk) ────────────────────────────────────
-  ctx.strokeStyle=P.chalk; ctx.lineWidth=1.2; ctx.setLineDash([3,3]);
-  // Home → 1st
-  ctx.beginPath(); ctx.moveTo(F.plt.x,F.plt.y); ctx.lineTo(F.b1.x,F.b1.y); ctx.stroke();
-  // 1st → 2nd
-  ctx.beginPath(); ctx.moveTo(F.b1.x,F.b1.y); ctx.lineTo(F.b2.x,F.b2.y); ctx.stroke();
-  // Home → 3rd
-  ctx.beginPath(); ctx.moveTo(F.plt.x,F.plt.y); ctx.lineTo(F.b3.x,F.b3.y); ctx.stroke();
-  // 3rd → 2nd
-  ctx.beginPath(); ctx.moveTo(F.b3.x,F.b3.y); ctx.lineTo(F.b2.x,F.b2.y); ctx.stroke();
-  ctx.setLineDash([]);
-
-  // ── Bases ─────────────────────────────────────────────────
-  [[F.b1.x,F.b1.y],[F.b3.x,F.b3.y]].forEach(([bx,by]) => {
-    ctx.fillStyle=P.offWht;
-    ctx.save(); ctx.translate(bx,by); ctx.rotate(Math.PI/4);
-    ctx.fillRect(-6,-6,12,12); ctx.restore();
-    ctx.strokeStyle='#C0BCA0'; ctx.lineWidth=1;
-    ctx.save(); ctx.translate(bx,by); ctx.rotate(Math.PI/4);
-    ctx.strokeRect(-6,-6,12,12); ctx.restore();
-  });
-  // Second base
-  ctx.fillStyle=P.offWht;
-  ctx.save(); ctx.translate(F.b2.x,F.b2.y); ctx.rotate(Math.PI/4);
-  ctx.fillRect(-5,-5,10,10); ctx.restore();
-}
-
-function drawBatterBox() {
-  // Chalk batter's boxes flanking home plate
-  ctx.strokeStyle=P.chalk; ctx.lineWidth=1.2; ctx.setLineDash([]);
-  // Right batter box (for right-handed batter — our side)
-  ctx.strokeRect(F.plt.x+2, F.plt.y-36, 28, 40);
-  // Left batter box (opposite, for lefties)
-  ctx.strokeRect(F.plt.x-30, F.plt.y-36, 28, 40);
-  // Catcher's box (behind plate)
-  ctx.strokeRect(F.plt.x-18, F.plt.y+2, 36, 22);
-}
-
-function drawHomePlate() {
-  const px=F.plt.x, py=F.plt.y;
-  ctx.fillStyle=P.chalk;
-  ctx.beginPath();
-  ctx.moveTo(px,       py-10);
-  ctx.lineTo(px+12,    py);
-  ctx.lineTo(px+12,    py+10);
-  ctx.lineTo(px-12,    py+10);
-  ctx.lineTo(px-12,    py);
-  ctx.closePath(); ctx.fill();
-  ctx.strokeStyle='#B0ACA0'; ctx.lineWidth=1;
-  ctx.stroke();
-}
-
-function drawStrikeZone(alpha) {
-  // Translucent box showing strike zone
-  const szX=F.plt.x-15, szY=LH*0.44, szW=30, szH=38;
-  ctx.save(); ctx.globalAlpha=alpha||0.28;
-  ctx.fillStyle='rgba(255,255,255,0.1)';
-  ctx.fillRect(~~szX,~~szY,szW,szH);
-  ctx.strokeStyle=P.chalk; ctx.lineWidth=1; ctx.setLineDash([2,2]);
-  ctx.strokeRect(~~szX,~~szY,szW,szH);
-  ctx.setLineDash([]); ctx.restore();
-}
-
-// ─── Palm trees (San Diego touch) ────────────────────────────
-function drawPalm(cx, baseY, ht) {
-  // Trunk (tapered)
-  const tw=Math.max(2, ~~(ht*0.06));
-  ctx.fillStyle='#7A5A2A';
-  for(let seg=0;seg<5;seg++) {
-    const f=seg/5, f2=(seg+1)/5;
-    const y0=baseY-ht*f, y1=baseY-ht*f2;
-    const x0=cx-tw, x1=cx+tw;
-    ctx.fillRect(~~x0,~~y1,tw*2,~~(y0-y1)+1);
-    // bark stripe
-    if(seg%2===0) ctx.fillStyle='#6A4A1A'; else ctx.fillStyle='#7A5A2A';
-  }
-  // Fronds (pixel rectangles at angles)
-  const frondC=['#157015','#1A8A1A','#20A020','#128012'];
-  const fronds=[[-40,-28],[-26,-38],[-8,-42],[10,-42],[26,-38],[40,-28],[50,-14],[-50,-14]];
-  fronds.forEach(([dx,dy],i)=>{
-    const ex=cx+dx, ey=(baseY-ht)+dy;
-    const mx=(cx+ex)/2+dy*0.15, my=((baseY-ht)+ey)/2-Math.abs(dx)*0.2;
-    ctx.fillStyle=frondC[i%frondC.length];
-    ctx.beginPath();
-    ctx.moveTo(cx,baseY-ht);
-    ctx.quadraticCurveTo(mx,my,ex,ey);
-    ctx.lineWidth=Math.max(2,~~(ht*0.05));
-    ctx.strokeStyle=frondC[i%frondC.length];
-    ctx.stroke();
+function spawnObstacle() {
+  obstacles.push({
+    x: (Math.random()-0.5)*1.6,
+    z: 1.5 + Math.random()*0.5,
+    type: Math.random()<0.5 ? 'cone' : 'debris',
   });
 }
 
-// ─── Pitcher sprite (right-handed pitcher) ────────────────────
-function drawPitcher(pitchT) {
-  // Pitcher appears at mound; scale slightly with perspective depth
-  const cx=F.mnd.x, cy=F.mnd.y-10;
+// ─── Update ───────────────────────────────────────────────────
+let prevT = 0;
+function update(dt) {
+  if (state !== 'playing') return;
 
-  ctx.save();
-  ctx.translate(cx, cy);
+  const dts = dt / 1000;
 
-  // Shadow
-  ctx.fillStyle='rgba(0,0,0,0.2)';
-  ctx.beginPath(); ctx.ellipse(0, 24, 12, 4, 0, 0, Math.PI*2); ctx.fill();
+  // Speed ramp
+  const maxSpeed = 0.8 + Math.min(distance/5000, 0.6);
+  targetSpeed = Math.min(maxSpeed, targetSpeed + dts * 0.02);
+  speed += (targetSpeed - speed) * dts * 2;
 
-  // Legs / cleats
-  $(-4, 18, 5, 14, P.white);   // L leg
-  $( 2, 18, 5, 14, P.white);   // R leg
-  $(-4, 30, 5,  2, P.blue);    // stirrups
-  $( 2, 30, 5,  2, P.blue);
-  $(-5, 32, 6,  3, P.black);   // cleats L
-  $( 2, 32, 6,  3, P.black);   // cleats R
+  // Distance
+  const distDelta = speed * 400 * dts;
+  distance += distDelta;
+  score = Math.floor(distance * 0.5);
 
-  // Belt
-  $(-7, 17, 14, 2, P.black);
+  // Track curve
+  curve = getTrackCurve(distance);
 
-  // Jersey body
-  $(-7, 2, 14, 16, P.blue);    // main body
-  $(-1, 2,  2, 16, P.white);   // center stripe
-  // Number on back (we see pitcher from front; show front #12)
-  txtC('12', 0, 14, P.white, 7);
+  // Steering
+  let steer = 0;
+  if (steerLeft)  steer -= 1;
+  if (steerRight) steer += 1;
 
-  // Glove side (left arm, at rest / windup)
-  const gloveAngle = pitchT < 0.18
-    ? -0.4 - pitchT * 2        // windup raises glove
-    : -0.4 + (pitchT-0.18)*1;  // lowers after release
-  ctx.save();
-  ctx.translate(-7, 8);
-  ctx.rotate(gloveAngle);
-  $(-2, 0, 5, 10, P.skin);     // forearm
-  $(-4, 8, 8,  7, '#3D2B1A');  // glove (brown)
-  ctx.restore();
+  // Curve pushes player
+  curveDrift += curve * speed * dts * 0.4;
+  playerX    += steer * dts * 2.2 * speed;
+  playerX    += curveDrift * dts * 0.15;
+  curveDrift *= (1 - dts * 2);
 
-  // Throwing arm (right arm)
-  const throwAngle = pitchT < 0.12
-    ? -1.2 - pitchT * 4         // wind up (arm goes back then up)
-    : -1.2 + (pitchT)*3;        // forward swing
-  ctx.save();
-  ctx.translate(7, 6);
-  ctx.rotate(Math.min(Math.PI*0.5, throwAngle));
-  $(-2, 0, 5, 12, P.skin);     // forearm
-  // Ball in hand until released
-  if(pitchT < 0.08) {
-    ctx.fillStyle=P.white;
-    ctx.beginPath(); ctx.arc(1,13,4,0,Math.PI*2); ctx.fill();
+  // Clamp
+  const onTrack = Math.abs(playerX) < 1.05;
+  if (!onTrack) {
+    speed *= 0.96; // friction on grass
+    targetSpeed *= 0.98;
   }
-  ctx.restore();
+  playerX = Math.max(-1.8, Math.min(1.8, playerX));
 
-  // Head + neck
-  $(-4, -18, 8, 6, P.skin);   // neck
-  $(-7, -30, 14,14, P.skin);  // head
+  // Road scroll
+  roadZ += speed * 0.012;
 
-  // Face details
-  $(-4, -26, 3, 3, P.black);  // eye L
-  $( 2, -26, 3, 3, P.black);  // eye R
-  $(-2, -21, 4, 2, P.black);  // mouth
+  // Shake decay
+  shakeMag *= 0.88;
+  shakeX = (Math.random()-0.5)*shakeMag*2;
+  shakeY = (Math.random()-0.5)*shakeMag;
+  crashFlash = Math.max(0, crashFlash - dts*3);
 
-  // Cap
-  $(-8, -34, 16, 6,  P.blue);  // crown
-  $(-8, -30, 18, 3,  P.navy);  // brim
-  $(0,  -34, 3,  4,  P.white); // LA logo mark
-
-  ctx.restore();
-}
-
-// ─── Batter (right-handed, jersey #3) full figure from behind ─
-// Camera is slightly above & behind home plate, batter faces pitcher.
-// From this angle we see the player's back.
-// RHB: right shoulder (3B side) = screen LEFT; left (1B) = screen RIGHT.
-function drawBatter() {
-  // Smaller figure, positioned to the right side of screen
-  const ax = LW - 46, ay = LH - 22;
-  const SCALE = 0.52;   // scale down from the full-size drawing coords
-
-  const sf   = state.batSwinging ? easeInOut(Math.min(1, state.batSwing)) : 0;
-  const batA = lerp(-0.52, 1.58, sf);
-  const lean = lerp(0, 0.06, sf);
-
-  ctx.save();
-  ctx.translate(ax, ay);
-  ctx.scale(SCALE, SCALE);
-  ctx.rotate(lean);
-
-  // ── Ground shadow ────────────────────────────────────────
-  ctx.fillStyle='rgba(0,0,0,0.22)';
-  ctx.beginPath(); ctx.ellipse(2,-2,28,7,0,0,Math.PI*2); ctx.fill();
-
-  // ── Cleats ───────────────────────────────────────────────
-  // Left (screen-left = batter's right / 3B side): rear foot, slightly bigger
-  $(-24,-14, 24, 9, '#141414');   // sole
-  $(-22,-20, 20, 8, '#222');      // upper
-  $(-20,-22, 16, 4, P.white);     // accent stripe
-  $(-22,-13,  3, 3, '#555');      // cleat stud
-  $(-16,-13,  3, 3, '#555');
-  $(-10,-13,  3, 3, '#555');
-  // Right (screen-right = batter's left / 1B side): stride foot
-  $(  4,-12, 24, 8, '#141414');
-  $(  6,-17, 20, 7, '#222');
-  $(  8,-19, 16, 4, P.white);
-  $(  6,-11,  3, 3, '#555');
-  $( 12,-11,  3, 3, '#555');
-  $( 18,-11,  3, 3, '#555');
-
-  // ── Socks (white with blue stirrups) ─────────────────────
-  $(-24,-50, 22, 36, P.white);    // L sock
-  $(  4,-48, 22, 36, P.white);    // R sock
-  $(-22,-38, 18,  4, P.blue);     // L stirrup
-  $(  6,-36, 18,  4, P.blue);     // R stirrup
-  $(-22,-32, 18,  3, P.blue);
-  $(  6,-30, 18,  3, P.blue);
-
-  // ── Pants (white baseball pants) ─────────────────────────
-  $(-26,-90, 24, 42, P.white);    // L leg
-  $(  4,-88, 24, 40, P.white);    // R leg
-  $( -4,-89, 10, 40, P.white);    // center fill
-  // Seam/crease shading
-  $(-26,-88,  2, 38, '#D8D4C8');
-  $( 26,-86,  2, 36, '#D8D4C8');
-  $( -6,-88,  2, 38, '#E4E0D4');
-  $(  4,-86,  2, 36, '#E4E0D4');
-
-  // ── Belt ─────────────────────────────────────────────────
-  $(-28,-95, 58,  5, '#1A1A1A');
-  // Buckle
-  $( -5,-97,  10, 8, '#5A5A5A');
-  $( -3,-96,   6, 6, P.gold);
-  $( -1,-95,   2, 4, '#8A6800');
-
-  // ── Jersey back (white Dodger pinstripes) ─────────────────
-  // Main body
-  $(-28,-170, 58, 76, P.white);
-  // Pinstripes (thin blue lines every 8px)
-  for(let p=-26; p<28; p+=8){
-    $(p,-170, 2, 76, '#9AA8E0');
-  }
-  // Side seams (solid blue)
-  $(-30,-170, 4, 76, P.blue);
-  $( 28,-170, 4, 76, P.blue);
-  // Jersey hem
-  $(-28,-97, 58,  3, '#D8D4C0');
-  // Shoulder yoke (blue panel across top)
-  $(-30,-170, 62, 14, P.blue);
-  $(-28,-158,  6, 10, P.blue);   // L sleeve top
-  $( 24,-158,  6, 10, P.blue);   // R sleeve top
-
-  // Number "3" on back — big and clear
-  ctx.fillStyle = P.blue;
-  ctx.font = 'bold 36px monospace';
-  ctx.textAlign = 'center';
-  ctx.fillText('3', 1, -120);
-
-  // ── Shoulders & upper arms ───────────────────────────────
-  // Left upper arm (3B side, larger / closer to camera)
-  $(-40,-162, 16, 40, P.skin);
-  $(-38,-162,  3, 38, P.blue);   // sleeve edge
-  // Right upper arm (1B side)
-  $( 26,-160, 16, 38, P.skin);
-  $( 38,-162,  3, 36, P.blue);   // sleeve edge
-
-  // ── Forearms (foreshortened — angled forward) ────────────
-  // They come forward and inward to grip the bat
-  $(-36,-126, 12, 20, P.skin);   // L forearm
-  $( 26,-124, 12, 18, P.skin);   // R forearm
-
-  // ── Batting gloves ────────────────────────────────────────
-  $(-38,-110, 14, 12, P.navy);   // L glove
-  $( 26,-108, 14, 12, P.navy);   // R glove
-  // Velcro strap
-  $(-36,-114,  9,  2, '#606090');
-  $( 28,-112,  9,  2, '#606090');
-  // Finger padding
-  $(-37,-106,  4,  6, '#383860');
-  $(-32,-106,  4,  6, '#383860');
-  $( 27,-104,  4,  6, '#383860');
-  $( 32,-104,  4,  6, '#383860');
-
-  // ── Helmet (back-view, RHB: ear flap on screen-LEFT = 3B side) ─
-  // Dome
-  $(-22,-222, 46, 30, P.blue);   // lower dome
-  $(-18,-234, 38, 14, P.blue);   // mid dome
-  $(-12,-242, 26, 10, P.blue);   // upper dome
-  // Inner shadow for depth
-  $(-18,-220, 38, 26, P.navy);
-  $(-14,-232, 30, 12, P.navy);
-  // Ear flap (screen-LEFT = batter's right ear, 3B facing, correct for RHB)
-  $(-32,-212, 12, 32, P.blue);
-  $(-30,-208, 10, 26, P.navy);
-  $(-30,-196,  8, 10, P.blue);   // bottom curve of flap
-  // Brim (faces toward pitcher = upper-right in back view)
-  $( -4,-192, 22,  5, P.navy);
-  $(  6,-196, 12,  5, P.navy);
-  // Vent strips
-  $(-10,-222,  3, 20, '#4858B0');
-  $(  6,-222,  3, 20, '#4858B0');
-  // Button on crown
-  $( -4,-244,  8,  5, P.navy);
-  $(  0,-246,  2,  2, P.white);  // pin dot
-
-  // ── Neck ─────────────────────────────────────────────────
-  $(-8,-195, 17, 20, P.skin);
-  // Jersey collar
-  $(-10,-174, 22,  5, P.blue);
-
-  // ── Bat (grip from screen-left, bat loads behind right shoulder) ─
-  // Grip origin: between hands where they meet
-  const gx = -14, gy = -108;
-
-  // Wrist/hands wrapping the grip
-  $( gx-6, gy-6, 22, 12, P.skin);   // top hand (L for RHB)
-  $( gx-5, gy+4, 20, 10, P.navy);   // bottom hand glove (R for RHB)
-
-  ctx.save();
-  ctx.translate(gx, gy);
-  ctx.rotate(batA);
-  ctx.lineCap = 'round';
-
-  // Knob
-  ctx.fillStyle='#3C2010';
-  ctx.beginPath(); ctx.arc(0,4,6,0,Math.PI*2); ctx.fill();
-  ctx.fillStyle='#5A3018';
-  ctx.beginPath(); ctx.arc(0,2,4,0,Math.PI*2); ctx.fill();
-
-  // Grip tape (black, with wrapped texture rings)
-  ctx.strokeStyle='#1A1010'; ctx.lineWidth=7;
-  ctx.beginPath(); ctx.moveTo(0,2); ctx.lineTo(0,-26); ctx.stroke();
-  ctx.strokeStyle='#2A2020'; ctx.lineWidth=1;
-  for(let g=0; g<7; g++){
-    ctx.beginPath();
-    ctx.moveTo(-4, -g*4-1);
-    ctx.lineTo( 4, -g*4-1);
-    ctx.stroke();
-  }
-
-  // Handle (natural wood, tapered)
-  ctx.strokeStyle='#6B3A18'; ctx.lineWidth=7;
-  ctx.beginPath(); ctx.moveTo(0,-24); ctx.lineTo(0,-58); ctx.stroke();
-
-  // Taper zone
-  ctx.strokeStyle='#7D4A22'; ctx.lineWidth=10;
-  ctx.beginPath(); ctx.moveTo(0,-55); ctx.lineTo(0,-72); ctx.stroke();
-
-  // Barrel (wide, rounded)
-  ctx.strokeStyle='#9B6238'; ctx.lineWidth=17;
-  ctx.beginPath(); ctx.moveTo(0,-70); ctx.lineTo(0,-94); ctx.stroke();
-  // Second pass slightly lighter for depth
-  ctx.strokeStyle='#A87248'; ctx.lineWidth=13;
-  ctx.beginPath(); ctx.moveTo(-1,-71); ctx.lineTo(-1,-93); ctx.stroke();
-
-  // End cap
-  ctx.fillStyle='#B08050';
-  ctx.beginPath(); ctx.arc(0,-94,10,0,Math.PI*2); ctx.fill();
-  ctx.fillStyle='#C09060';
-  ctx.beginPath(); ctx.arc(-1,-95,7,0,Math.PI*2); ctx.fill();
-
-  // Barrel highlight (sheen down one side)
-  ctx.strokeStyle='rgba(255,255,255,0.38)'; ctx.lineWidth=3;
-  ctx.beginPath(); ctx.moveTo(-5,-72); ctx.lineTo(-5,-92); ctx.stroke();
-
-  // Wood grain lines
-  ctx.strokeStyle='rgba(80,40,10,0.30)'; ctx.lineWidth=1;
-  ctx.beginPath(); ctx.moveTo(3,-72); ctx.lineTo(3,-90); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(6,-76); ctx.lineTo(6,-88); ctx.stroke();
-
-  // Brand stamp on barrel
-  $(-5,-82, 10, 2, 'rgba(60,30,10,0.35)');
-
-  ctx.restore(); // bat
-  ctx.restore(); // body
-}
-
-// ─── Baseball (with spin animation) ──────────────────────────
-function drawBall(x, y, size, spin) {
-  const r  = Math.max(1.5, size/2);
-  const s  = spin || 0;
-  // Drop shadow (ellipse, offset)
-  ctx.fillStyle = 'rgba(0,0,0,0.28)';
-  ctx.beginPath(); ctx.ellipse(~~x+4, ~~(y+r*0.7), ~~(r*0.85), ~~(r*0.38), 0, 0, Math.PI*2); ctx.fill();
-  // Ball body
-  ctx.fillStyle = P.offWht;
-  ctx.beginPath(); ctx.arc(~~x, ~~y, Math.ceil(r), 0, Math.PI*2); ctx.fill();
-  // Subtle edge shadow
-  ctx.strokeStyle='rgba(160,155,140,0.55)'; ctx.lineWidth=1;
-  ctx.stroke();
-  // Seams (spin-driven: offset arcs rotate with s)
-  if(r >= 4) {
-    const sw = Math.max(1, ~~(r*0.13));
-    ctx.strokeStyle='#CC5858'; ctx.lineWidth=sw;
-    // Two C-curve seams, rotated by spin angle
-    ctx.save();
-    ctx.translate(~~x, ~~y);
-    ctx.rotate(s);
-    const sr = ~~(r*0.62);
-    // seam 1
-    ctx.beginPath(); ctx.arc(-~~(r*0.22), 0, sr, 0.25, 1.45); ctx.stroke();
-    ctx.beginPath(); ctx.arc( ~~(r*0.22), 0, sr, Math.PI+0.25, Math.PI+1.45); ctx.stroke();
-    ctx.restore();
-  }
-  // Specular highlight (fixed, not spinning)
-  $(~~x - ~~(r*0.55) + ~~(r*0.18), ~~y - ~~(r*0.52),
-    Math.max(2,~~(r*0.3)), Math.max(1,~~(r*0.22)), 'rgba(255,255,255,0.85)');
-}
-
-// ─── Contact flash effect ─────────────────────────────────────
-function drawContactFlash() {
-  if(state.contactFlash <= 0) return;
-  const a = state.contactFlash;
-  const r = (1-a) * 32 + 8;
-  ctx.globalAlpha = a * 0.9;
-  ctx.fillStyle = '#FFFFC0';
-  ctx.beginPath(); ctx.arc(~~state.contactX, ~~state.contactY, ~~r, 0, Math.PI*2); ctx.fill();
-  // Star burst lines
-  ctx.strokeStyle = '#FFE040'; ctx.lineWidth = 2;
-  for(let i=0; i<6; i++){
-    const a2 = (i/6)*Math.PI*2;
-    const d1 = r*0.6, d2 = r*1.2;
-    ctx.beginPath();
-    ctx.moveTo(state.contactX+Math.cos(a2)*d1, state.contactY+Math.sin(a2)*d1);
-    ctx.lineTo(state.contactX+Math.cos(a2)*d2, state.contactY+Math.sin(a2)*d2);
-    ctx.stroke();
-  }
-  ctx.globalAlpha = 1;
-}
-
-// ─── Hit ball trajectory ──────────────────────────────────────
-function buildTrajectory(outcome) {
-  const pts=[], steps=36;
-  const sx=BALL_END.x, sy=BALL_END.y;
-  let ex, peakUp;
-  switch(outcome) {
-    case 'hr':    ex=LW/2+(Math.random()-0.5)*80; peakUp=LH*0.65; break;
-    case 'deep':  ex=LW/2+(Math.random()-0.5)*100;peakUp=LH*0.42; break;
-    default:      ex=LW/2+(Math.random()-0.5)*80; peakUp=LH*0.3;  break;
-  }
-  for(let i=0;i<=steps;i++) {
-    const f=i/steps;
-    pts.push({
-      x: lerp(sx, ex, f),
-      y: sy - 4*peakUp*f*(1-f),
-      sz: lerp(BALL_SIZE_L, 5, f),
-    });
-  }
-  state.ballAnim={ pts, t:0, speed: outcome==='hr' ? 0.019 : 0.027 };
-}
-
-function drawTrajectoryArc() {
-  if(!state.ballAnim) return;
-  const {pts,t} = state.ballAnim;
-  const end=~~(t*pts.length);
-  for(let i=1;i<end;i+=2) {
-    const a=Math.max(0.1,0.5*(1-i/pts.length));
-    ctx.globalAlpha=a;
-    $(pts[i].x-1,pts[i].y-1,2,2,P.gold);
-  }
-  ctx.globalAlpha=1;
-}
-
-// ─── Confetti ─────────────────────────────────────────────────
-function spawnConfetti() {
-  state.confetti=[];
-  for(let i=0;i<50;i++) {
-    state.confetti.push({
-      x:Math.random()*LW, y:10,
-      vx:(Math.random()-0.5)*3, vy:1.5+Math.random()*2.5,
-      c:[P.gold,P.red,P.blue,P.white,P.g1][~~(Math.random()*5)],
-      w:3+~~(Math.random()*3), h:2+~~(Math.random()*2),
-      life:1,
-    });
-  }
-}
-function drawConfetti(dt) {
-  state.confetti=state.confetti.filter(c=>c.life>0&&c.y<LH+10);
-  state.confetti.forEach(c=>{
-    c.x+=c.vx; c.y+=c.vy; c.vy+=0.05; c.life-=0.005;
-    ctx.globalAlpha=c.life;
-    $(c.x,c.y,c.w,c.h,c.c);
-  });
-  ctx.globalAlpha=1;
-}
-
-// ─── HUD ──────────────────────────────────────────────────────
-function drawHUD() {
-  // ── Top bar background ────────────────────────────────────
-  $(0, 0, LW, 26, P.hudBg);
-  $(0, 25, LW, 2, P.gold);   // gold bottom border
-  // Side accents
-  $(0, 0, 3, 26, P.blue);
-  $(LW-3, 0, 3, 26, P.blue);
-
-  // ── Score (left) ──────────────────────────────────────────
-  txt('SCORE', 6, 9, P.gold, 7);
-  // Score value with leading zeros, white
-  const scoreStr = String(state.score).padStart(3,'0');
-  txt(scoreStr, 6, 22, P.white, 11);
-
-  // ── HR dots (left of center) ──────────────────────────────
-  // Small star/diamond for each home run
-  const dotStartX = 76;
-  txt('HR', dotStartX, 9, P.gold, 7);
-  for(let d=0; d<state.homeRuns; d++){
-    ctx.fillStyle = P.gold;
-    const dx = dotStartX + d*9;
-    ctx.beginPath(); ctx.arc(dx+3, 17, 4, 0, Math.PI*2); ctx.fill();
-  }
-
-  // ── Center: flash message or pitch indicator ───────────────
-  if(state.flashTimer > 0){
-    const fa = Math.min(1, state.flashTimer / 200);
-    ctx.globalAlpha = fa;
-    // Shadow
-    ctx.fillStyle = P.black;
-    ctx.font = 'bold 10px monospace';
-    ctx.textAlign = 'center';
-    ctx.fillText(state.flashMsg, LW/2+1, 18);
-    // Colored text
-    ctx.fillStyle = state.flashColor;
-    ctx.fillText(state.flashMsg, LW/2, 17);
-    ctx.globalAlpha = 1;
-  } else if(state.phase === 'pitching'){
-    // Blinking SWING during pitch
-    if(((Date.now()/350|0)%2)===0){
-      txtC('SWING!', LW/2, 18, '#FF4040', 10);
+  // Near miss timer
+  if (nearMissTimer > 0) {
+    nearMissTimer -= dts;
+    if (nearMissTimer <= 0) {
+      nearMissEl.classList.add('hidden');
     }
   }
 
-  // ── Pitches remaining (right) ─────────────────────────────
-  txt('PITCHES', LW-60, 9, P.gold, 7);
-  const pStr = String(state.pitchesLeft).padStart(2,'0');
-  txt(pStr, LW-46, 22, P.white, 11);
-  // Pitch pip row
-  for(let p=0; p<TOTAL_PITCHES; p++){
-    const px2 = LW-3 - p*5 - 4;
-    const used = p >= state.pitchesLeft;
-    ctx.fillStyle = used ? '#303030' : P.gold;
-    ctx.fillRect(~~px2, 2, 3, 3);
+  // AI cars
+  for (let i = aiCars.length-1; i >= 0; i--) {
+    const ai = aiCars[i];
+    ai.wobbleT += dts * 1.5;
+    ai.wobble = Math.sin(ai.wobbleT) * 0.003;
+    ai.x += ai.wobble;
+
+    // Move toward player (relative)
+    ai.z -= (speed - ai.speed * 0.5) * dts * 0.08;
+
+    if (ai.z <= 0.01) {
+      aiCars.splice(i, 1);
+      spawnAICar();
+      continue;
+    }
+    if (ai.z > 3) {
+      aiCars.splice(i, 1);
+      continue;
+    }
+
+    // Collision with player
+    if (ai.z < 0.18 && ai.z > 0.04) {
+      const dx = Math.abs(playerX - ai.x);
+      if (dx < 0.28) {
+        endGame();
+        return;
+      } else if (dx < 0.5 && nearMissTimer <= 0) {
+        nearMissTimer = 1.5;
+        score += 500;
+        nearMissEl.classList.remove('hidden');
+      }
+    }
   }
-}
 
-// ─── Timing meter ────────────────────────────────────────────
-function drawTimingMeter(t) {
-  const mx=6, my=LH-36, mw=LW-12, mh=16;
+  // Obstacle movement
+  for (let i = obstacles.length-1; i >= 0; i--) {
+    const ob = obstacles[i];
+    ob.z -= speed * dts * 0.09;
+    if (ob.z <= 0.01) { obstacles.splice(i,1); continue; }
 
-  // Outer frame
-  $(mx-1,my-1,mw+2,mh+2, P.black);
-  $(mx,  my,  mw,  mh,   '#1A0020');
-
-  // Zone fills
-  // Full red (miss) background
-  $(mx+1, my+1, mw-2, mh-2, '#882020');
-  // Good zones (green)
-  const gL=~~(GOOD_MIN*(mw-2)),  gR=~~(GOOD_MAX*(mw-2));
-  $(mx+1+gL, my+1, gR-gL, mh-2, '#1A8820');
-  // Perfect zone (gold)
-  const pL=~~(PERFECT_MIN*(mw-2)), pR=~~(PERFECT_MAX*(mw-2));
-  $(mx+1+pL, my+1, pR-pL, mh-2, '#C09010');
-  // Bright centre of perfect
-  const pcX=~~((PERFECT_MIN+PERFECT_MAX)/2*(mw-2));
-  $(mx+1+pcX-4, my+1, 8, mh-2, P.gold);
-
-  // Zone labels
-  ctx.fillStyle=P.black; ctx.font='bold 6px monospace'; ctx.textAlign='center';
-  ctx.fillText('MISS',  mx+~~(0.15*(mw-2)),     my+mh-4);
-  ctx.fillText('GOOD',  mx+~~(0.315*(mw-2)),    my+mh-4);
-  ctx.fillText('PERFECT',mx+~~(0.64*(mw-2)),    my+mh-4);
-  ctx.fillText('GOOD',  mx+~~(0.875*(mw-2)),    my+mh-4);
-  ctx.fillText('MISS',  mx+~~(0.96*(mw-2)),     my+mh-4);
-
-  // Indicator bar (position = pitchT, locked to ball travel)
-  const indX=~~(mx+1+t*(mw-4));
-  $(indX-2, my,   5, mh,   P.black);    // shadow
-  $(indX-1, my+1, 4, mh-2, '#C0E8FF'); // body
-  $(indX,   my+2, 2, mh-6, P.white);   // highlight
-
-  // Blinking "TAP TO SWING" label
-  if(((Date.now()/400|0)%2)===0) {
-    txtC('[ TAP TO SWING ]', LW/2, my-3, P.white, 7);
+    if (ob.z < 0.15 && ob.z > 0.03) {
+      const dx = Math.abs(playerX - ob.x);
+      if (dx < 0.2) {
+        endGame();
+        return;
+      }
+    }
   }
+
+  // Spawn management
+  if (Math.random() < dts * (1 + distance/3000)) {
+    spawnAICar();
+  }
+  if (obstacles.length < 3 && Math.random() < dts * 0.4) {
+    spawnObstacle();
+  }
+
+  // Cloud drift
+  for (const c of clouds) {
+    c.x -= c.speed * speed * 60;
+    if (c.x < -c.w) c.x = 1 + c.w;
+  }
+
+  // Update HUD
+  hudScore.textContent = score.toLocaleString();
+  hudSpeed.textContent = Math.floor(120 + speed * 280);
+  hudBest.textContent  = Math.max(score, bestScore).toLocaleString();
 }
 
-// ─── Scanlines (CRT effect) ───────────────────────────────────
-function drawScanlines() {
-  ctx.fillStyle='rgba(0,0,0,0.12)';
-  for(let y=0;y<LH;y+=2) ctx.fillRect(0,y,LW,1);
-}
+// ─── Draw ─────────────────────────────────────────────────────
+function draw() {
+  ctx.clearRect(0, 0, W, H);
 
-// ─── Big hit result popup (drawn over field, below HUD) ───────
-function drawResultPopup() {
-  if(state.flashTimer <= 0 || state.phase !== 'result') return;
-  const a = Math.min(1, state.flashTimer / 400);
-  const scale = lerp(0.6, 1.0, easeOut(1 - state.flashTimer / 950));
   ctx.save();
-  ctx.globalAlpha = a;
-  ctx.translate(LW/2, LH*0.38);
-  ctx.scale(scale, scale);
-  // Dark backing pill
-  const tw = state.flashMsg.length * 7.5;
-  $(~~(-tw*0.5 - 8), -16, ~~(tw+16), 26, 'rgba(0,0,0,0.65)');
-  // Shadow text
-  ctx.fillStyle = P.black;
-  ctx.font = 'bold 18px monospace';
-  ctx.textAlign = 'center';
-  ctx.fillText(state.flashMsg, 2, 2);
-  // Coloured text
-  ctx.fillStyle = state.flashColor;
-  ctx.fillText(state.flashMsg, 0, 0);
-  ctx.restore();
-}
-
-// ─── Frame render ─────────────────────────────────────────────
-function drawFrame(dt) {
-  ctx.clearRect(0,0,LW,LH);
+  if (shakeMag > 0.5) {
+    ctx.translate(shakeX, shakeY);
+  }
 
   drawSky();
-  drawSun();
-  drawClouds(state.crowdT);
-  drawBleachers();
-  drawScoreboard();        // outfield scoreboard
-  drawOutfieldWall();
-  drawFoulPoles();
-  drawWarningTrack();
-  drawField();             // grass + foul lines
-  drawInfield();           // dirt diamond, bases, mound
-  drawBatterBox();
-  drawHomePlate();
-  drawStrikeZone(0.35);
+  drawRoad();
+  drawPlayerCar();
 
-  // Palm trees (beyond left & right field)
-  drawPalm(22,  F.trackBot+8, 55);
-  drawPalm(298, F.trackBot+5, 62);
+  ctx.restore();
 
-  // Pitcher
-  if(state.phase==='pitching'||state.phase==='idle') {
-    drawPitcher(state.phase==='pitching' ? state.pitchT : 0);
+  // Crash flash overlay
+  if (crashFlash > 0) {
+    ctx.fillStyle = `rgba(255,50,50,${crashFlash * 0.6})`;
+    ctx.fillRect(0, 0, W, H);
   }
 
-  // Live ball (during pitch) — grows and spins as it approaches
-  if(state.phase==='pitching' && !state.swung) {
-    const bx = lerp(BALL_START.x, BALL_END.x, state.pitchT);
-    const by = lerp(BALL_START.y, BALL_END.y, state.pitchT)
-              - Math.sin(state.pitchT*Math.PI)*18; // arc
-    const bs = lerp(BALL_SIZE_S, BALL_SIZE_L, state.pitchT*state.pitchT);
-    drawBall(bx, by, bs, state.ballSpin);
+  // Speed overlay at high speed
+  if (speed > 0.7 && state === 'playing') {
+    drawSpeedLines();
+  }
+}
+
+// ─── Sky & Background ─────────────────────────────────────────
+function drawSky() {
+  const horizon = H * 0.38;
+
+  // Sky gradient
+  const sky = ctx.createLinearGradient(0, 0, 0, horizon);
+  sky.addColorStop(0,   '#1a1a6e');
+  sky.addColorStop(0.4, '#2563EB');
+  sky.addColorStop(1,   '#7DD3FC');
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, W, horizon);
+
+  // Sun
+  const sunX = W * 0.72;
+  const sunY = horizon * 0.45;
+  const sunR = W * 0.07;
+  const sunG = ctx.createRadialGradient(sunX, sunY, 0, sunX, sunY, sunR*2);
+  sunG.addColorStop(0,   '#FFFDE7');
+  sunG.addColorStop(0.3, '#FDD835');
+  sunG.addColorStop(1,   'rgba(253,216,53,0)');
+  ctx.fillStyle = sunG;
+  ctx.fillRect(0, 0, W, horizon);
+
+  // Clouds
+  for (const c of clouds) {
+    drawCloud(c.x * W, c.y * H, c.w * W);
   }
 
-  // Hit ball animation
-  if(state.ballAnim) {
-    drawTrajectoryArc();
-    const {pts,t}=state.ballAnim;
-    const idx=Math.min(pts.length-1, ~~(t*pts.length));
-    const pt=pts[idx];
-    drawBall(pt.x, pt.y, Math.max(3, pt.sz*(1-t*0.3)), state.ballSpin);
-  }
+  // Mountains / city silhouette
+  drawMountains(horizon);
 
-  // Contact flash effect (brief sparkle when bat meets ball)
-  drawContactFlash();
+  // Crowd stands (simple rectangles with people)
+  drawStands(horizon);
 
-  drawConfetti(dt);
-
-  // Batter foreground (always visible)
-  drawBatter();
-
-  // Big result popup (over field, below HUD)
-  drawResultPopup();
-
-  // HUD (drawn on top of everything)
-  drawHUD();
-
-  // Timing meter (only during pitch)
-  if(state.phase==='pitching') drawTimingMeter(state.pitchT);
-
-  drawScanlines();
+  // Grass beyond road
+  ctx.fillStyle = '#3AA335';
+  ctx.fillRect(0, horizon, W, H - horizon);
 }
 
-// ─── Game logic ───────────────────────────────────────────────
-function startGame() {
-  resetState();
-  showScreen('game');
-  setTimeout(startPitch, 700);
+function drawCloud(cx, cy, cw) {
+  ctx.fillStyle = 'rgba(255,255,255,0.85)';
+  const ch = cw * 0.35;
+  ctx.beginPath();
+  ctx.ellipse(cx,       cy,       cw*0.5, ch*0.55, 0, 0, Math.PI*2);
+  ctx.ellipse(cx-cw*0.28, cy+ch*0.1, cw*0.32, ch*0.45, 0, 0, Math.PI*2);
+  ctx.ellipse(cx+cw*0.28, cy+ch*0.1, cw*0.3,  ch*0.4,  0, 0, Math.PI*2);
+  ctx.fill();
 }
 
-function startPitch() {
-  if(state.pitchesLeft<=0){ endGame(); return; }
-  state.phase='pitching'; state.pitchT=0; state.swung=false;
-  state.batSwing=0; state.batSwinging=false; state.ballAnim=null;
-  state.ballSpin=0; state.contactFlash=0;
-  sndPitch();
-}
+function drawMountains(horizon) {
+  ctx.fillStyle = '#1E3A5F';
+  ctx.beginPath();
+  ctx.moveTo(0, horizon);
+  const pts = [[0.05,0.7],[0.15,0.45],[0.25,0.6],[0.35,0.38],[0.5,0.55],
+               [0.6,0.35],[0.72,0.5],[0.82,0.4],[0.92,0.55],[1,0.48],[1,1],[0,1]];
+  for (const p of pts) ctx.lineTo(p[0]*W, horizon*(0.2 + p[1]*0.8));
+  ctx.closePath();
+  ctx.fill();
 
-function doSwing() {
-  if(state.phase!=='pitching'||state.swung) return;
-  state.swung=true; state.batSwinging=true; state.batSwing=0;
-
-  const t=state.pitchT;
-  let outcome;
-  if(t>=PERFECT_MIN && t<=PERFECT_MAX)    outcome='hr';
-  else if(t>=GOOD_MIN && t<=GOOD_MAX)     outcome='deep';
-  else if(t>0.14 && t<0.96)              outcome='ground';
-  else                                     outcome='miss';
-
-  applyOutcome(outcome);
-}
-
-function doAutoMiss() {
-  if(state.swung) return;
-  state.swung=true;
-  applyOutcome('miss');
-}
-
-const FLASH_INFO = {
-  hr:     { msg:'💥 CRUSHED!',        c: '#F8E040' },
-  deep:   { msg:'⚡ DEEP HIT!',        c: '#70C0FF' },
-  ground: { msg:'🏃 GROUNDER',         c: '#70E070' },
-  miss:   { msg:'❌ SWING AND A MISS', c: '#C09090' },
-};
-
-function applyOutcome(outcome) {
-  state.lastOutcome=outcome;
-  state.hitLog.push(outcome);
-  state.score+=SCORES[outcome];
-  if(outcome==='hr') state.homeRuns++;
-  state.pitchesLeft--;
-
-  const fi=FLASH_INFO[outcome];
-  state.flashMsg=fi.msg; state.flashColor=fi.c; state.flashTimer=950;
-
-  if(outcome==='miss') sndMiss();
-  else {
-    sndCrack();
-    // Contact flash at ball position
-    state.contactFlash = 1;
-    state.contactX = lerp(BALL_START.x, BALL_END.x, state.pitchT);
-    state.contactY = lerp(BALL_START.y, BALL_END.y, state.pitchT)
-                   - Math.sin(state.pitchT*Math.PI)*18;
-    if(outcome==='hr'){
-      setTimeout(sndHR,200);
-      spawnConfetti();
-      state.crowdExcited = 1;   // crowd goes wild!
-    } else if(outcome==='deep'){
-      state.crowdExcited = 0.5;
-    }
-  }
-
-  if(outcome!=='miss') buildTrajectory(outcome);
-
-  state.phase='result';
-  state.resultTimer = outcome==='hr' ? 2400 : 1500;
-}
-
-function endGame() {
-  state.phase='end';
-  showScreen('end');
-  document.getElementById('finalScore').textContent=state.score;
-  document.getElementById('finalHR').textContent=state.homeRuns;
-
-  const pct=state.score/(TOTAL_PITCHES*SCORES.hr);
-  const msgs=[
-    [0.9,'🏆 LEGENDARY! Hall of Fame!'],
-    [0.7,'🌟 AMAZING! Scouts are watching!'],
-    [0.5,'⚡ SOLID GAME! Keep swinging!'],
-    [0.25,'👍 More practice, champ!'],
-    [0,  '😅 Keep your eye on the ball!'],
-  ];
-  document.getElementById('ratingMsg').textContent=msgs.find(([t])=>pct>=t)[1];
-
-  const logEl=document.getElementById('hitLog');
-  logEl.innerHTML='';
-  state.hitLog.forEach(h=>{
-    const chip=document.createElement('span');
-    chip.className=`hit-chip ${h}`;
-    chip.textContent={hr:'⚾ HR',deep:'💥 Deep',ground:'🏃 Gnd',miss:'❌'}[h];
-    logEl.appendChild(chip);
+  // Snow caps
+  ctx.fillStyle = 'rgba(255,255,255,0.7)';
+  [[0.15,0.45],[0.35,0.38],[0.6,0.35],[0.82,0.4]].forEach(([px,py]) => {
+    const mx = px*W, my = horizon*(0.2+py*0.8);
+    ctx.beginPath();
+    ctx.moveTo(mx, my);
+    ctx.lineTo(mx-W*0.025, my+H*0.03);
+    ctx.lineTo(mx+W*0.025, my+H*0.03);
+    ctx.closePath();
+    ctx.fill();
   });
 }
 
-// ─── Main loop ────────────────────────────────────────────────
-let lastTs=0;
-function loop(ts) {
-  const dt=Math.min((ts-(lastTs||ts)), 50);
-  lastTs=ts;
+function drawStands(horizon) {
+  // Left stand
+  ctx.fillStyle = '#2D3748';
+  ctx.fillRect(0, horizon*0.65, W*0.2, horizon*0.35);
+  // Right stand
+  ctx.fillRect(W*0.8, horizon*0.65, W*0.2, horizon*0.35);
 
-  if(state.phase==='pitching') {
-    state.pitchT=Math.min(0.97, state.pitchT+dt/PITCH_DURATION);
-    // Ball spins faster as it approaches (backspin)
-    state.ballSpin += dt * 0.008 * (1 + state.pitchT * 3);
-    if(state.pitchT>=0.96 && !state.swung) doAutoMiss();
-  }
-
-  if(state.phase==='result') {
-    state.resultTimer-=dt;
-    if(state.batSwinging) {
-      // Snappy start, smooth follow-through
-      const speed = lerp(0.006, 0.0028, Math.min(1, state.batSwing));
-      state.batSwing=Math.min(1, state.batSwing+speed*dt);
-      if(state.batSwing>=1) state.batSwinging=false;
-    }
-    if(state.ballAnim) {
-      state.ballAnim.t=Math.min(1, state.ballAnim.t+state.ballAnim.speed*(dt/16));
-      // Ball spins during flight (topspin/backspin)
-      state.ballSpin += dt * 0.018;
-    }
-    if(state.resultTimer<=0) {
-      state.phase='idle'; state.ballAnim=null;
-      if(state.pitchesLeft<=0) endGame();
-      else setTimeout(startPitch, 350);
+  // Crowd dots
+  for (let row=0; row<3; row++) {
+    for (let col=0; col<8; col++) {
+      const hue = col*45;
+      ctx.fillStyle = `hsl(${hue},70%,60%)`;
+      // Left
+      ctx.beginPath();
+      ctx.arc(col*W*0.022+W*0.01, horizon*(0.7+row*0.08), W*0.008, 0, Math.PI*2);
+      ctx.fill();
+      // Right
+      ctx.beginPath();
+      ctx.arc(W*0.82+col*W*0.022, horizon*(0.7+row*0.08), W*0.008, 0, Math.PI*2);
+      ctx.fill();
     }
   }
 
-  state.flashTimer=Math.max(0, state.flashTimer-dt);
-  state.crowdT+=dt;
-  // Crowd excitement decays
-  state.crowdExcited = Math.max(0, (state.crowdExcited||0) - dt*0.0008);
-  // Contact flash decays fast
-  state.contactFlash = Math.max(0, (state.contactFlash||0) - dt*0.005);
-
-  drawFrame(dt);
-  requestAnimationFrame(loop);
+  // Banners on stands
+  const bannerColors = ['#E8001D','#FFD700','#1E3A8A'];
+  for (let b=0; b<3; b++) {
+    ctx.fillStyle = bannerColors[b];
+    ctx.fillRect(b*W*0.065+W*0.01, horizon*0.64, W*0.055, H*0.015);
+    ctx.fillRect(W*0.82+b*W*0.065, horizon*0.64, W*0.055, H*0.015);
+  }
 }
 
-// ─── Events ───────────────────────────────────────────────────
-document.getElementById('startBtn').addEventListener('click', startGame);
-document.getElementById('playAgainBtn').addEventListener('click', startGame);
-swingZ.addEventListener('click', doSwing);
-swingZ.addEventListener('touchstart', e=>{ e.preventDefault(); doSwing(); }, {passive:false});
+// ─── Road rendering (pseudo-3D strips) ────────────────────────
+function drawRoad() {
+  const horizon = H * 0.38;
+  const roadH   = H - horizon;
 
-// ─── Init ─────────────────────────────────────────────────────
-resetState();
-showScreen('start');
-requestAnimationFrame(loop);
+  // We draw horizontal strips from top (far) to bottom (near)
+  // Each strip alternates road colors and has curbs at edges
+
+  const stripes  = 80; // number of horizontal strips
+  let camX = playerX * 0.5; // camera follows player a bit
+
+  // Perspective: strips near horizon are thin, near player are thick
+  // Use quadratic distribution for better perspective feel
+  let prevY = horizon;
+
+  // Draw strips bottom to top for proper occlusion
+  for (let s = 0; s < stripes; s++) {
+    // t=0 nearest, t=1 horizon
+    const tNear = s / stripes;
+    const tFar  = (s + 1) / stripes;
+
+    const yNear = horizon + roadH * (1 - tNear * tNear);
+    const yFar  = horizon + roadH * (1 - tFar  * tFar);
+
+    const scaleNear = 1 - tNear;
+    const scaleFar  = 1 - tFar;
+
+    const cxNear = W/2 - camX * scaleNear * W * 0.9;
+    const cxFar  = W/2 - camX * scaleFar  * W * 0.9;
+
+    // Road half-width at this depth
+    const rwNear = W * 0.38 * (1 - tNear * 0.7);
+    const rwFar  = W * 0.38 * (1 - tFar  * 0.7);
+
+    // Alternating colour (based on road scroll)
+    const stripe = (Math.floor(s * 0.5 + roadZ * 8)) % 2;
+
+    // Grass
+    ctx.fillStyle = stripe ? COLORS.grassLight : COLORS.grassDark;
+    ctx.fillRect(0, yFar, W, yNear - yFar);
+
+    // Road trapezoid
+    ctx.fillStyle = stripe ? COLORS.roadLight : COLORS.roadDark;
+    ctx.beginPath();
+    ctx.moveTo(cxNear - rwNear, yNear);
+    ctx.lineTo(cxNear + rwNear, yNear);
+    ctx.lineTo(cxFar  + rwFar,  yFar);
+    ctx.lineTo(cxFar  - rwFar,  yFar);
+    ctx.closePath();
+    ctx.fill();
+
+    // Curbs
+    const curbW = rwNear * 0.07;
+    const curbWf = rwFar * 0.07;
+    const curbColor = (Math.floor(s * 0.7 + roadZ * 5)) % 2 ? COLORS.curbRed : COLORS.curbWhite;
+    ctx.fillStyle = curbColor;
+    // Left curb
+    ctx.beginPath();
+    ctx.moveTo(cxNear - rwNear,        yNear);
+    ctx.lineTo(cxNear - rwNear + curbW, yNear);
+    ctx.lineTo(cxFar  - rwFar  + curbWf, yFar);
+    ctx.lineTo(cxFar  - rwFar,          yFar);
+    ctx.closePath();
+    ctx.fill();
+    // Right curb
+    ctx.beginPath();
+    ctx.moveTo(cxNear + rwNear - curbW, yNear);
+    ctx.lineTo(cxNear + rwNear,         yNear);
+    ctx.lineTo(cxFar  + rwFar,          yFar);
+    ctx.lineTo(cxFar  + rwFar  - curbWf, yFar);
+    ctx.closePath();
+    ctx.fill();
+
+    // Centre lane dashes
+    if (stripe) {
+      const dw = Math.max(1, rwNear * 0.025);
+      const dwf = Math.max(1, rwFar * 0.025);
+      ctx.fillStyle = COLORS.laneLight;
+      ctx.beginPath();
+      ctx.moveTo(cxNear - dw, yNear);
+      ctx.lineTo(cxNear + dw, yNear);
+      ctx.lineTo(cxFar  + dwf, yFar);
+      ctx.lineTo(cxFar  - dwf, yFar);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    // Barriers (armco) - simple lines near top of road section
+    if (s > stripes * 0.7) {
+      const bh = (yNear - yFar) * 0.4;
+      ctx.fillStyle = '#C0C0C0';
+      ctx.fillRect(cxFar - rwFar - curbWf - rwFar*0.06, yFar, rwFar*0.055, bh);
+      ctx.fillRect(cxFar + rwFar + curbWf, yFar, rwFar*0.055, bh);
+    }
+  }
+
+  // Draw AI cars
+  const sortedAI = [...aiCars].sort((a,b) => b.z - a.z);
+  for (const ai of sortedAI) {
+    const t = 1 - Math.min(1, ai.z / 2.5);
+    if (t < 0.02) continue;
+    const screenX = W/2 + (ai.x - camX) * t * W * 0.45;
+    const screenY = H * 0.38 + (H * 0.62) * (t * t);
+    const carW    = W * 0.10 * t;
+    const carH    = carW * 0.5;
+    drawAICar(screenX, screenY, carW, carH, ai.color);
+  }
+
+  // Draw obstacles
+  for (const ob of obstacles) {
+    const t = 1 - Math.min(1, ob.z / 2.5);
+    if (t < 0.02) continue;
+    const screenX = W/2 + (ob.x - camX) * t * W * 0.45;
+    const screenY = H * 0.38 + (H * 0.62) * (t * t);
+    const sz = W * 0.025 * t;
+    if (ob.type === 'cone') drawCone(screenX, screenY, sz);
+    else drawDebris(screenX, screenY, sz);
+  }
+
+  // Road surface vignette
+  const vig = ctx.createLinearGradient(0, H*0.38, 0, H);
+  vig.addColorStop(0, 'rgba(0,0,0,0.35)');
+  vig.addColorStop(0.3, 'rgba(0,0,0,0)');
+  vig.addColorStop(1, 'rgba(0,0,0,0.2)');
+  ctx.fillStyle = vig;
+  ctx.fillRect(0, H*0.38, W, H*0.62);
+}
+
+// ─── AI car shape ─────────────────────────────────────────────
+function drawAICar(cx, cy, cw, ch, col) {
+  const x = cx - cw/2, y = cy - ch;
+
+  // Body
+  ctx.fillStyle = col.body;
+  ctx.beginPath();
+  ctx.roundRect(x, y + ch*0.2, cw, ch*0.55, 2);
+  ctx.fill();
+
+  // Cockpit
+  ctx.fillStyle = '#1a1a1a';
+  ctx.beginPath();
+  ctx.roundRect(x + cw*0.3, y + ch*0.05, cw*0.4, ch*0.3, 2);
+  ctx.fill();
+
+  // Front wing
+  ctx.fillStyle = col.body;
+  ctx.fillRect(x - cw*0.06, y + ch*0.68, cw*1.12, ch*0.1);
+
+  // Rear wing
+  ctx.fillRect(x + cw*0.1, y + ch*0.1, cw*0.8, ch*0.08);
+
+  // Accent stripe
+  ctx.fillStyle = col.accent;
+  ctx.fillRect(x + cw*0.15, y + ch*0.32, cw*0.7, ch*0.1);
+
+  // Wheels
+  ctx.fillStyle = '#1a1a1a';
+  [[0.05,0.62],[0.8,0.62],[0.05,0.32],[0.8,0.32]].forEach(([rx,ry]) => {
+    ctx.beginPath();
+    ctx.ellipse(x+cw*rx, y+ch*ry, cw*0.12, ch*0.13, 0, 0, Math.PI*2);
+    ctx.fill();
+  });
+}
+
+// ─── Cone ─────────────────────────────────────────────────────
+function drawCone(cx, cy, sz) {
+  // Orange cone
+  ctx.fillStyle = '#FF6B00';
+  ctx.beginPath();
+  ctx.moveTo(cx, cy - sz*2.5);
+  ctx.lineTo(cx - sz, cy);
+  ctx.lineTo(cx + sz, cy);
+  ctx.closePath();
+  ctx.fill();
+  // White stripe
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  ctx.moveTo(cx - sz*0.5, cy - sz);
+  ctx.lineTo(cx + sz*0.5, cy - sz);
+  ctx.lineTo(cx + sz*0.3, cy - sz*0.5);
+  ctx.lineTo(cx - sz*0.3, cy - sz*0.5);
+  ctx.closePath();
+  ctx.fill();
+  // Base
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(cx - sz*1.2, cy, sz*2.4, sz*0.3);
+}
+
+// ─── Debris ───────────────────────────────────────────────────
+function drawDebris(cx, cy, sz) {
+  ctx.fillStyle = '#888';
+  for (let i=0; i<4; i++) {
+    const dx = (Math.sin(i*1.57)*sz*1.5);
+    const dy = (Math.cos(i*1.57)*sz*0.8);
+    ctx.fillRect(cx+dx-sz*0.4, cy+dy-sz*0.4, sz*0.8, sz*0.8);
+  }
+}
+
+// ─── Speed lines ──────────────────────────────────────────────
+function drawSpeedLines() {
+  const alpha = (speed - 0.7) / 0.6;
+  ctx.save();
+  ctx.strokeStyle = `rgba(255,255,255,${alpha * 0.3})`;
+  ctx.lineWidth = 1;
+  for (let i=0; i<20; i++) {
+    const x = (Math.sin(i * 1.618 * roadZ) * 0.5 + 0.5) * W;
+    const y = H * 0.38 + Math.random() * H * 0.62;
+    const len = 20 + Math.random() * 60;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x, y + len);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+// ─── Player car ───────────────────────────────────────────────
+function drawPlayerCar() {
+  const cx  = W / 2;
+  const cy  = H * 0.78;
+  const cw  = Math.min(W * 0.22, 110);
+  const ch  = cw * 0.48;
+
+  // Lean with steering
+  const lean = (steerRight ? 1 : steerLeft ? -1 : 0) * 0.06;
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(lean);
+
+  // Shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.3)';
+  ctx.beginPath();
+  ctx.ellipse(0, ch*0.55, cw*0.5, ch*0.2, 0, 0, Math.PI*2);
+  ctx.fill();
+
+  const hw = cw/2, hh = ch/2;
+
+  // Rear wing
+  ctx.fillStyle = '#C00016';
+  ctx.fillRect(-hw*0.7, -hh*0.9, hw*1.4, ch*0.12);
+  ctx.fillRect(-hw*0.72,-hh*0.95, hw*0.04, ch*0.18); // left pillar
+  ctx.fillRect( hw*0.68,-hh*0.95, hw*0.04, ch*0.18); // right pillar
+
+  // Main body — Ferrari red
+  ctx.fillStyle = '#E8001D';
+  ctx.beginPath();
+  ctx.moveTo(-hw*0.5,  hh*0.5);   // rear left
+  ctx.lineTo( hw*0.5,  hh*0.5);   // rear right
+  ctx.lineTo( hw*0.58, -hh*0.1);  // side right
+  ctx.lineTo( hw*0.38, -hh*0.85); // nose right
+  ctx.lineTo(-hw*0.38, -hh*0.85); // nose left
+  ctx.lineTo(-hw*0.58, -hh*0.1);  // side left
+  ctx.closePath();
+  ctx.fill();
+
+  // Side pods
+  ctx.fillStyle = '#CC0016';
+  ctx.beginPath();
+  ctx.moveTo(-hw*0.6, hh*0.3);
+  ctx.lineTo(-hw*0.6,-hh*0.2);
+  ctx.lineTo(-hw*0.38,-hh*0.4);
+  ctx.lineTo(-hw*0.35, hh*0.35);
+  ctx.closePath();
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(hw*0.6, hh*0.3);
+  ctx.lineTo(hw*0.6,-hh*0.2);
+  ctx.lineTo(hw*0.38,-hh*0.4);
+  ctx.lineTo(hw*0.35, hh*0.35);
+  ctx.closePath();
+  ctx.fill();
+
+  // Yellow accents (Ferrari livery)
+  ctx.fillStyle = '#FFD700';
+  ctx.fillRect(-hw*0.12, -hh*0.6, hw*0.24, ch*0.08); // nose stripe
+  ctx.fillRect(-hw*0.4,   hh*0.1,  hw*0.8,  ch*0.06); // body stripe
+
+  // Cockpit opening
+  ctx.fillStyle = '#0A0A14';
+  ctx.beginPath();
+  ctx.ellipse(0, -hh*0.1, hw*0.22, hh*0.32, 0, 0, Math.PI*2);
+  ctx.fill();
+
+  // Helmet
+  ctx.fillStyle = '#FFD700';
+  ctx.beginPath();
+  ctx.ellipse(0, -hh*0.2, hw*0.14, hh*0.2, 0, 0, Math.PI*2);
+  ctx.fill();
+  ctx.fillStyle = '#1E1E1E';
+  ctx.beginPath();
+  ctx.ellipse(0, -hh*0.14, hw*0.12, hh*0.1, 0, 0, Math.PI*2);
+  ctx.fill();
+
+  // Halo
+  ctx.strokeStyle = '#C0A000';
+  ctx.lineWidth = ch * 0.035;
+  ctx.beginPath();
+  ctx.ellipse(0, -hh*0.18, hw*0.22, hh*0.08, 0, Math.PI, Math.PI*2);
+  ctx.stroke();
+
+  // Front wing
+  ctx.fillStyle = '#C00016';
+  ctx.beginPath();
+  ctx.moveTo(-hw*0.75, -hh*0.75);
+  ctx.lineTo( hw*0.75, -hh*0.75);
+  ctx.lineTo( hw*0.55, -hh*0.88);
+  ctx.lineTo(-hw*0.55, -hh*0.88);
+  ctx.closePath();
+  ctx.fill();
+  // Front wing endplates
+  ctx.fillRect(-hw*0.78, -hh*0.92, hw*0.06, hh*0.2);
+  ctx.fillRect( hw*0.72, -hh*0.92, hw*0.06, hh*0.2);
+
+  // Wheels
+  ctx.fillStyle = '#1a1a1a';
+  // Rear
+  ctx.beginPath(); ctx.ellipse(-hw*0.68, hh*0.35, hw*0.17, hh*0.28, 0, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse( hw*0.68, hh*0.35, hw*0.17, hh*0.28, 0, 0, Math.PI*2); ctx.fill();
+  // Front
+  ctx.beginPath(); ctx.ellipse(-hw*0.62,-hh*0.55, hw*0.15, hh*0.24, 0, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse( hw*0.62,-hh*0.55, hw*0.15, hh*0.24, 0, 0, Math.PI*2); ctx.fill();
+
+  // Wheel rims
+  ctx.fillStyle = '#C0C0C0';
+  [[-hw*0.68,hh*0.35],[ hw*0.68,hh*0.35],[-hw*0.62,-hh*0.55],[ hw*0.62,-hh*0.55]].forEach(([wx,wy]) => {
+    ctx.beginPath(); ctx.ellipse(wx, wy, hw*0.07, hh*0.12, 0, 0, Math.PI*2); ctx.fill();
+  });
+
+  // Exhaust glow
+  if (speed > 0.4) {
+    const glow = ctx.createRadialGradient(0, hh*0.55, 0, 0, hh*0.55, ch*0.25);
+    glow.addColorStop(0,   `rgba(255,160,0,${(speed-0.4)*0.8})`);
+    glow.addColorStop(0.5, `rgba(255,80,0,${(speed-0.4)*0.4})`);
+    glow.addColorStop(1,   'rgba(255,0,0,0)');
+    ctx.fillStyle = glow;
+    ctx.fillRect(-hw, hh*0.35, hw*2, ch*0.5);
+  }
+
+  ctx.restore();
+}
+
+// ─── End game ─────────────────────────────────────────────────
+function endGame() {
+  state = 'dead';
+  crashFlash = 1;
+  shakeMag = 12;
+
+  // Vibrate
+  if (navigator.vibrate) navigator.vibrate([80, 40, 120]);
+
+  if (score > bestScore) {
+    bestScore = score;
+    localStorage.setItem('ferrariSprintBest', bestScore);
+  }
+
+  setTimeout(() => {
+    finalScoreEl.textContent = score.toLocaleString();
+    bestScoreEl.textContent  = bestScore.toLocaleString();
+    gameoverScreen.classList.add('active');
+    hud.classList.add('hidden');
+    nearMissEl.classList.add('hidden');
+  }, 600);
+}
+
+// ─── Game loop ────────────────────────────────────────────────
+function loop(ts) {
+  const dt = Math.min(ts - prevT, 50);
+  prevT = ts;
+  update(dt);
+  draw();
+  raf = requestAnimationFrame(loop);
+}
+
+// ─── Controls ─────────────────────────────────────────────────
+window.addEventListener('keydown', e => {
+  if (e.key === 'ArrowLeft')  steerLeft  = true;
+  if (e.key === 'ArrowRight') steerRight = true;
+  if ((e.key === ' ' || e.key === 'Enter') && state === 'start') startGame();
+});
+window.addEventListener('keyup', e => {
+  if (e.key === 'ArrowLeft')  steerLeft  = false;
+  if (e.key === 'ArrowRight') steerRight = false;
+});
+
+// Touch zones
+touchLeft.addEventListener('touchstart',  e => { e.preventDefault(); steerLeft  = true;  }, {passive:false});
+touchLeft.addEventListener('touchend',    e => { e.preventDefault(); steerLeft  = false; }, {passive:false});
+touchLeft.addEventListener('touchcancel', e => { steerLeft  = false; });
+
+touchRight.addEventListener('touchstart',  e => { e.preventDefault(); steerRight = true;  }, {passive:false});
+touchRight.addEventListener('touchend',    e => { e.preventDefault(); steerRight = false; }, {passive:false});
+touchRight.addEventListener('touchcancel', e => { steerRight = false; });
+
+// ─── Start / Restart ──────────────────────────────────────────
+function startGame() {
+  state = 'playing';
+  initGame();
+  startScreen.classList.remove('active');
+  gameoverScreen.classList.remove('active');
+  hud.classList.remove('hidden');
+  nearMissEl.classList.add('hidden');
+  prevT = performance.now();
+  if (!raf) raf = requestAnimationFrame(loop);
+}
+
+startBtn.addEventListener('click',   startGame);
+restartBtn.addEventListener('click', () => {
+  gameoverScreen.classList.remove('active');
+  startGame();
+});
+
+// Update best score on start screen
+function updateStartBest() {
+  const b = parseInt(localStorage.getItem('ferrariSprintBest') || '0');
+  if (b > 0) startBestEl.textContent = 'BEST: ' + b.toLocaleString();
+}
+updateStartBest();
+
+// ─── Idle animation on start screen ───────────────────────────
+function idleLoop(ts) {
+  if (state !== 'start') return;
+  roadZ += 0.006;
+  for (const c of clouds) {
+    c.x -= c.speed * 30;
+    if (c.x < -c.w) c.x = 1 + c.w;
+  }
+  ctx.clearRect(0, 0, W, H);
+  ctx.save();
+  drawSky();
+  drawRoad();
+  drawPlayerCar();
+  ctx.restore();
+  requestAnimationFrame(idleLoop);
+}
+
+// Initial idle draw
+prevT = performance.now();
+requestAnimationFrame(ts => { prevT = ts; idleLoop(ts); });

@@ -1,79 +1,62 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <title>SD Little League Derby</title>
-  <link rel="stylesheet" href="styles.css" />
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>Ferrari Sprint</title>
+  <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-
-  <!-- ===================== START SCREEN ===================== -->
-  <div id="startScreen" class="screen active">
-    <div class="screen-inner">
-      <div class="sun"></div>
-
-      <div class="cap-badge">⚾</div>
-      <h1 class="game-title">HOME RUN<br>DERBY</h1>
-      <p class="sub-title">San Diego Little League</p>
-
-      <div class="scoreboard-box pixel-box">
-        <p>10 PITCHES. TIME YOUR SWING!</p>
-        <div class="scoring-key">
-          <span class="key-hr">  ⚾ CRUSHED!  (perfect timing) = 10 pts</span>
-          <span class="key-deep">  💥 DEEP HIT  (good timing)    = 5 pts</span>
-          <span class="key-ground">  🏃 GROUNDER  (early/late)     = 1 pt</span>
-          <span class="key-miss">  ❌ MISS      (way off)        = 0 pts</span>
-        </div>
-      </div>
-
-      <button id="startBtn" class="btn-main">PLAY BALL!</button>
-      <p class="tap-hint">▶ TAP ANYWHERE TO SWING ◀</p>
-    </div>
-  </div>
-
-  <!-- ===================== GAME SCREEN ===================== -->
-  <div id="gameScreen" class="screen">
-    <!-- HUD values kept in DOM for JS reference but hidden (drawn on canvas) -->
-    <div id="hud">
-      <span id="scoreDisplay"></span>
-      <span id="pitchesDisplay"></span>
-    </div>
-
-    <!-- Pixel-art game canvas — all rendering happens here -->
+  <div id="game-container">
     <canvas id="gameCanvas"></canvas>
 
-    <!-- Full-screen tap zone for swinging -->
-    <div id="swingZone"></div>
-  </div>
-
-  <!-- ===================== END SCREEN ===================== -->
-  <div id="endScreen" class="screen">
-    <div class="screen-inner">
-      <div class="sun"></div>
-      <h2 class="end-title">GAME OVER!</h2>
-
-      <div class="final-scoreboard pixel-box">
-        <div class="sb-row header">
-          <span>PLAYER</span><span>HR</span><span>SCORE</span>
+    <div id="start-screen" class="screen active">
+      <div class="screen-inner">
+        <div class="f1-badge">F1</div>
+        <h1 class="game-title">FERRARI<br><span class="title-accent">SPRINT</span></h1>
+        <div class="inst-box">
+          <div class="inst-row"><span class="key-badge">← →</span> Arrow keys to steer</div>
+          <div class="inst-row"><span class="key-badge">TAP</span> Left / Right side of screen</div>
         </div>
-        <div class="sb-row">
-          <span class="sb-name">YOU</span>
-          <span id="finalHR">0</span>
-          <span id="finalScore">0</span>
-        </div>
+        <button class="btn-main" id="startBtn">TAP TO START</button>
+        <div class="best-label" id="startBest"></div>
       </div>
-
-      <div id="ratingMsg" class="rating-msg"></div>
-
-      <div id="hitLog" class="hit-log"></div>
-
-      <button id="playAgainBtn" class="btn-main">PLAY AGAIN!</button>
     </div>
-  </div>
 
+    <div id="gameover-screen" class="screen">
+      <div class="screen-inner">
+        <div class="crash-badge">CRASH!</div>
+        <h2 class="go-title">RACE OVER</h2>
+        <div class="score-panel">
+          <div class="sp-row"><span class="sp-lbl">SCORE</span><span class="sp-val" id="finalScore">0</span></div>
+          <div class="sp-row best"><span class="sp-lbl">BEST</span><span class="sp-val" id="bestScore">0</span></div>
+        </div>
+        <button class="btn-main" id="restartBtn">RACE AGAIN</button>
+      </div>
+    </div>
+
+    <div id="hud" class="hidden">
+      <div class="hud-left">
+        <div class="hud-lbl">SCORE</div>
+        <div class="hud-val" id="hudScore">0</div>
+      </div>
+      <div class="hud-center">
+        <div class="spd-val" id="hudSpeed">0</div>
+        <div class="spd-unit">KM/H</div>
+      </div>
+      <div class="hud-right">
+        <div class="hud-lbl">BEST</div>
+        <div class="hud-val" id="hudBest">0</div>
+      </div>
+    </div>
+
+    <div id="near-miss" class="hidden">NEAR MISS! +500</div>
+
+    <div id="touch-left" class="touch-zone"></div>
+    <div id="touch-right" class="touch-zone"></div>
+  </div>
   <script src="game.js"></script>
 </body>
 </html>
