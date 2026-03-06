@@ -37,17 +37,17 @@ const touchRight     = document.getElementById('touch-right');
 const TOTAL_LAPS = 3;
 
 const LAP_SECTIONS = [
-  {len: 4000, curve:  0.0 },  // start/finish straight
-  {len: 2200, curve:  0.9 },  // right turn 1
-  {len: 1200, curve:  0.0 },  // short straight
-  {len: 1800, curve: -1.4 },  // left hairpin
-  {len:  800, curve:  0.0 },
-  {len: 3000, curve:  0.65},  // right sweeper
-  {len: 1500, curve: -0.55},  // left kink
-  {len: 2000, curve:  0.0 },  // back straight
-  {len: 2200, curve:  1.15},  // right chicane entry
-  {len: 1500, curve: -1.0 },  // left chicane exit
-  {len: 2300, curve:  0.0 },  // final straight
+  {len: 4000, curve:  0.00},  // start/finish straight
+  {len: 2200, curve:  0.55},  // right turn 1
+  {len: 1200, curve:  0.00},  // short straight
+  {len: 1800, curve: -0.75},  // left hairpin
+  {len:  800, curve:  0.00},
+  {len: 3000, curve:  0.40},  // right sweeper
+  {len: 1500, curve: -0.35},  // left kink
+  {len: 2000, curve:  0.00},  // back straight
+  {len: 2200, curve:  0.65},  // right chicane entry
+  {len: 1500, curve: -0.60},  // left chicane exit
+  {len: 2300, curve:  0.00},  // final straight
 ];
 const LAP_LENGTH    = LAP_SECTIONS.reduce((a, s) => a + s.len, 0); // 22500
 const FINISH_Z_RATE = 0.08 / 400; // z-units per game-distance unit
@@ -176,8 +176,9 @@ function update(dt) {
   const distDelta = speed * 400 * dts;
   distance += distDelta;
 
-  // Track curve
-  curve = getTrackCurve(distance);
+  // Track curve — smooth transitions between sections
+  const targetCurve = getTrackCurve(distance);
+  curve += (targetCurve - curve) * Math.min(1, dts * 2.8);
 
   // Steering
   let steer = 0;
@@ -366,19 +367,21 @@ function drawRoad() {
   const stripes = 80;
   const camX    = playerX * 0.5;
 
-  // Visual curve scale — how much the road sweeps laterally at horizon
-  const CURVE_SWEEP = W * 0.32;
+  // Linear curve accumulation (OutRun-style): each strip adds a small
+  // lateral step so the road bends progressively toward the horizon.
+  const CURVE_STEP = W * 0.0028;  // offset added per strip
+  let curveSumX = 0;             // running lateral offset
 
   for (let s = 0; s < stripes; s++) {
-    const tNear = s       / stripes;  // 0=near player, 1=horizon
+    const tNear = s       / stripes;
     const tFar  = (s + 1) / stripes;
 
     const yNear = horizon + roadH * (1 - tNear * tNear);
     const yFar  = horizon + roadH * (1 - tFar  * tFar);
 
-    // Lateral curve offset — road bends away in the direction of the turn
-    const curveNear = curve * tNear * tNear * CURVE_SWEEP;
-    const curveFar  = curve * tFar  * tFar  * CURVE_SWEEP;
+    const curveNear = curveSumX;
+    curveSumX      += curve * CURVE_STEP;
+    const curveFar  = curveSumX;
 
     const cxNear = W/2 - camX * (1-tNear) * W * 0.88 + curveNear;
     const cxFar  = W/2 - camX * (1-tFar)  * W * 0.88 + curveFar;
@@ -445,6 +448,10 @@ function drawRoad() {
     }
   }
 
+  // horizonCurveX = total lateral offset accumulated to the horizon.
+  // For an object at z-depth, its offset scales linearly: (z/2.5) * horizonCurveX
+  const horizonCurveX = curveSumX;
+
   // AI cars (sorted far-to-near for proper draw order)
   const sortedAI = [...aiCars].sort((a, b) => b.z - a.z);
   for (const ai of sortedAI) {
@@ -452,7 +459,7 @@ function drawRoad() {
     const t  = 1 - Math.min(1, ai.z / 2.5);
     if (t < 0.02) continue;
     const zF  = Math.min(1, ai.z / 2.5);
-    const csx = curve * zF * zF * CURVE_SWEEP;
+    const csx = zF * horizonCurveX;           // linear, consistent with road strips
     const screenX = W/2 + (ai.x - camX) * t * W * 0.44 + csx;
     const screenY = H * 0.38 + (H * 0.62) * (t * t);
     const cw = W * 0.115 * t;
@@ -461,7 +468,7 @@ function drawRoad() {
   }
 
   // Finish line
-  if (state === 'playing') drawFinishLine(finishLineZ, camX, CURVE_SWEEP);
+  if (state === 'playing') drawFinishLine(finishLineZ, camX, horizonCurveX);
 
   // Vignette
   const vig = ctx.createLinearGradient(0, H*0.38, 0, H);
@@ -473,13 +480,13 @@ function drawRoad() {
 }
 
 // ─── Finish line ──────────────────────────────────────────────
-function drawFinishLine(z, camX, curveSweep) {
+function drawFinishLine(z, camX, horizonCurveX) {
   if (z <= 0 || z > 2.5) return;
   const t     = 1 - z / 2.5;        // t_ai: 1=at player, 0=horizon
-  const tNear = 1 - t;               // strip metric: 0=near, 1=far (= z/2.5)
+  const tNear = 1 - t;               // strip depth: 0=near, 1=far (= z/2.5)
   const screenY = H * 0.38 + (H * 0.62) * (t * t);
   const rw    = W * 0.40 * (1 - tNear * 0.70);
-  const cx    = W/2 - camX * (1-tNear) * W * 0.88 + curve * tNear * tNear * curveSweep;
+  const cx    = W/2 - camX * (1-tNear) * W * 0.88 + tNear * horizonCurveX;
   const lineH = Math.max(3, rw * 0.13);
   const sq    = 10;
   const sw    = (rw * 2) / sq;
