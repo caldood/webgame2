@@ -185,7 +185,7 @@ function update(dt) {
   if (steerLeft)  steer -= 1;
   if (steerRight) steer += 1;
 
-  curveDrift += curve * speed * dts * 0.4;
+  curveDrift -= curve * speed * dts * 0.4;  // road bends right → drift left, steer right to follow
   playerX    += steer * dts * 2.2 * speed;
   playerX    += curveDrift * dts * 0.15;
   curveDrift *= (1 - dts * 2);
@@ -369,7 +369,7 @@ function drawRoad() {
 
   // Linear curve accumulation (OutRun-style): each strip adds a small
   // lateral step so the road bends progressively toward the horizon.
-  const CURVE_STEP = W * 0.0028;  // offset added per strip
+  const CURVE_STEP = W * 0.005;   // offset added per strip (≈0.22–0.30W at horizon for medium/tight turns)
   let curveSumX = 0;             // running lateral offset
 
   for (let s = 0; s < stripes; s++) {
