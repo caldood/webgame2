@@ -800,6 +800,7 @@ function endGame() {
     localStorage.setItem('ferrariSprintBest', bestScore);
   }
 
+  setTouchZonesActive(false);
   setTimeout(() => {
     finalScoreEl.textContent = score.toLocaleString();
     bestScoreEl.textContent  = bestScore.toLocaleString();
@@ -839,6 +840,12 @@ touchRight.addEventListener('touchend',    e => { e.preventDefault(); steerRight
 touchRight.addEventListener('touchcancel', e => { steerRight = false; });
 
 // ─── Start / Restart ──────────────────────────────────────────
+function setTouchZonesActive(active) {
+  const pe = active ? 'auto' : 'none';
+  touchLeft.style.pointerEvents  = pe;
+  touchRight.style.pointerEvents = pe;
+}
+
 function startGame() {
   state = 'playing';
   initGame();
@@ -846,15 +853,16 @@ function startGame() {
   gameoverScreen.classList.remove('active');
   hud.classList.remove('hidden');
   nearMissEl.classList.add('hidden');
+  setTouchZonesActive(true);
   prevT = performance.now();
   if (!raf) raf = requestAnimationFrame(loop);
 }
 
-startBtn.addEventListener('click',   startGame);
-restartBtn.addEventListener('click', () => {
-  gameoverScreen.classList.remove('active');
-  startGame();
-});
+startBtn.addEventListener('click',    startGame);
+startBtn.addEventListener('touchend', e => { e.preventDefault(); startGame(); }, {passive:false});
+
+restartBtn.addEventListener('click',    () => { gameoverScreen.classList.remove('active'); startGame(); });
+restartBtn.addEventListener('touchend', e => { e.preventDefault(); gameoverScreen.classList.remove('active'); startGame(); }, {passive:false});
 
 // Update best score on start screen
 function updateStartBest() {

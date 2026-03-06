@@ -272,6 +272,7 @@ html, body {
   top: 0; bottom: 0;
   width: 50%;
   z-index: 5;
+  pointer-events: none; /* enabled only during gameplay via JS */
 }
 #touch-left  { left: 0; }
 #touch-right { right: 0; }
