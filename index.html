@@ -19,6 +19,7 @@
         <div class="inst-box">
           <div class="inst-row"><span class="key-badge">← →</span> Arrow keys to steer</div>
           <div class="inst-row"><span class="key-badge">TAP</span> Left / Right side of screen</div>
+          <div class="inst-row"><span class="key-badge">3</span> Laps — beat your best lap time</div>
         </div>
         <button class="btn-main" id="startBtn">TAP TO START</button>
         <div class="best-label" id="startBest"></div>
@@ -27,11 +28,11 @@
 
     <div id="gameover-screen" class="screen">
       <div class="screen-inner">
-        <div class="crash-badge">CRASH!</div>
-        <h2 class="go-title">RACE OVER</h2>
+        <div class="crash-badge">FINISHED</div>
+        <h2 class="go-title">RACE COMPLETE</h2>
         <div class="score-panel">
-          <div class="sp-row"><span class="sp-lbl">SCORE</span><span class="sp-val" id="finalScore">0</span></div>
-          <div class="sp-row best"><span class="sp-lbl">BEST</span><span class="sp-val" id="bestScore">0</span></div>
+          <div class="sp-row"><span class="sp-lbl">TOTAL TIME</span><span class="sp-val" id="finalScore">0:00.00</span></div>
+          <div class="sp-row best"><span class="sp-lbl">BEST LAP</span><span class="sp-val" id="bestScore">0:00.00</span></div>
         </div>
         <button class="btn-main" id="restartBtn">RACE AGAIN</button>
       </div>
@@ -39,20 +40,20 @@
 
     <div id="hud" class="hidden">
       <div class="hud-left">
-        <div class="hud-lbl">SCORE</div>
-        <div class="hud-val" id="hudScore">0</div>
+        <div class="hud-lbl">LAP</div>
+        <div class="hud-val" id="hudScore">1 / 3</div>
       </div>
       <div class="hud-center">
         <div class="spd-val" id="hudSpeed">0</div>
         <div class="spd-unit">KM/H</div>
       </div>
       <div class="hud-right">
-        <div class="hud-lbl">BEST</div>
-        <div class="hud-val" id="hudBest">0</div>
+        <div class="hud-lbl">LAP TIME</div>
+        <div class="hud-val" id="hudBest">0:00.00</div>
       </div>
     </div>
 
-    <div id="near-miss" class="hidden">NEAR MISS! +500</div>
+    <div id="near-miss" class="hidden"></div>
 
     <div id="touch-left" class="touch-zone"></div>
     <div id="touch-right" class="touch-zone"></div>
